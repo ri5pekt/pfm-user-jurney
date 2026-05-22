@@ -1,10 +1,8 @@
-fix: attribution round 3 from live data analysis
+feat: session detail view + session ID search
 
-- Parse URL fragment as fallback params (fixes fbclid in /?#... URLs)
-- nb_li_ms + nb_lp_ms -> Bing Ads (Nextbee params without nb_bmt)
-- tracking.narvar.com referrer -> email|Narvar
-- mailanyone.net added to email relay domains
-- syndicatedsearch.goog referrer -> organic_search|Google
-- Wunderkind utm_source -> email|Wunderkind
-- utm_source=Klaviyo/Klaviyo+Campaign (no nb_klid) -> email|Klaviyo
-- utm_source=campaign + utm_medium=email/sms -> email|Klaviyo
+- Sessions tab: search by session ID (partial match, debounced)
+- Sessions tab: click any row to open detail view
+- New route /session/:id renders SessionDetailView
+- SessionDetailView: attribution card, session meta card, full journey timeline
+- admin-api: GET /sessions/:id returns session + all events ordered by time
+- admin-api: GET /sessions supports ?session_id= filter (ILIKE partial match)

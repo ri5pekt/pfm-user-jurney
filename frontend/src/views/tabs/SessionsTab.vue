@@ -8,6 +8,16 @@
         <span class="total">{{ total.toLocaleString() }} total</span>
       </div>
       <div class="header-right">
+        <div class="search-wrap">
+          <input
+            v-model="searchId"
+            class="search-input"
+            placeholder="Search session ID…"
+            @keydown.enter="doSearch"
+            @input="onSearchInput"
+          />
+          <button v-if="searchId" class="search-clear" @click="clearSearch">✕</button>
+        </div>
         <select v-model="filterChannel" @change="goTo(1)" class="filter-select">
           <option value="">All channels</option>
           <option value="paid_search">Paid Search</option>
@@ -63,7 +73,7 @@
           <tr v-else-if="sessions.length === 0">
             <td colspan="7" class="state-cell">No sessions yet.</td>
           </tr>
-          <tr v-for="s in sessions" :key="s.session_id" class="row">
+          <tr v-for="s in sessions" :key="s.session_id" class="row clickable" @click="openSession(s.session_id)">
             <td class="col-time">{{ formatTime(s.first_seen) }}</td>
             <td class="col-session">{{ s.session_id.slice(0, 8) }}</td>
             <td class="col-pages">{{ s.page_count }}</td>
@@ -90,6 +100,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/api'
 
 interface Session {
@@ -107,6 +118,7 @@ interface Session {
 
 interface ChannelStat { channel: string; count: string }
 
+const router        = useRouter()
 const sessions      = ref<Session[]>([])
 const stats         = ref<ChannelStat[]>([])
 const total         = ref(0)
@@ -114,6 +126,9 @@ const page          = ref(1)
 const limit         = 20
 const loading       = ref(false)
 const filterChannel = ref('')
+const searchId      = ref('')
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 
@@ -122,6 +137,7 @@ async function load() {
   try {
     const params: Record<string, unknown> = { page: page.value, limit }
     if (filterChannel.value) params.channel = filterChannel.value
+    if (searchId.value.trim()) params.session_id = searchId.value.trim()
     const { data } = await api.get('/sessions', { params })
     sessions.value = data.sessions
     total.value    = data.total
@@ -139,6 +155,24 @@ function goTo(n: number) { page.value = n; load() }
 
 function toggleChannel(ch: string) {
   filterChannel.value = filterChannel.value === ch ? '' : ch
+  goTo(1)
+}
+
+function openSession(id: string) {
+  router.push(`/session/${id}`)
+}
+
+function doSearch() {
+  goTo(1)
+}
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => goTo(1), 400)
+}
+
+function clearSearch() {
+  searchId.value = ''
   goTo(1)
 }
 
@@ -192,6 +226,28 @@ h2 { font-size: 1rem; font-weight: 600; }
 .total { font-size: .8rem; color: var(--soft); }
 .header-right { display: flex; gap: .5rem; align-items: center; }
 
+/* Search */
+.search-wrap  { position: relative; display: flex; align-items: center; }
+.search-input {
+  padding: .38rem 1.8rem .38rem .7rem;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: .8rem;
+  width: 190px;
+  transition: border-color .15s;
+}
+.search-input:focus   { outline: none; border-color: var(--accent); }
+.search-input::placeholder { color: var(--soft); }
+.search-clear {
+  position: absolute; right: .4rem;
+  background: none; border: none; cursor: pointer;
+  color: var(--soft); font-size: .7rem; line-height: 1;
+  padding: 2px 4px; border-radius: 3px;
+}
+.search-clear:hover { color: var(--text); }
+
 .filter-select {
   padding: .38rem .7rem;
   border: 1.5px solid var(--border);
@@ -235,6 +291,8 @@ th { padding: .65rem 1rem; text-align: left; font-size: .75rem; font-weight: 600
 .row { border-bottom: 1px solid var(--border); transition: background .1s; }
 .row:last-child { border-bottom: none; }
 .row:hover { background: #f8fafc; }
+.row.clickable { cursor: pointer; }
+.row.clickable:hover { background: #f0fdfb; }
 td { padding: .65rem 1rem; vertical-align: middle; }
 .state-cell { text-align: center; color: var(--soft); padding: 2.5rem 1rem; font-size: .875rem; }
 

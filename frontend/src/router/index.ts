@@ -13,6 +13,10 @@ const router = createRouter({
       path: '/',
       component: () => import('@/views/DashboardView.vue'),
     },
+    {
+      path: '/session/:id',
+      component: () => import('@/views/SessionDetailView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

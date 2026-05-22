@@ -8,14 +8,16 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const page    = Math.max(1, parseInt(req.query.page   as string) || 1);
   const limit   = Math.min(100, parseInt(req.query.limit as string) || 20);
   const offset  = (page - 1) * limit;
-  const channel = (req.query.channel as string) || '';
-  const source  = (req.query.source  as string) || '';
+  const channel    = (req.query.channel    as string) || '';
+  const source     = (req.query.source     as string) || '';
+  const session_id = (req.query.session_id as string) || '';
 
   const conditions: string[] = [];
   const params: unknown[]    = [];
 
-  if (channel) { params.push(channel); conditions.push(`channel = $${params.length}`); }
-  if (source)  { params.push(source);  conditions.push(`source  = $${params.length}`); }
+  if (channel)    { params.push(channel);    conditions.push(`channel    = $${params.length}`); }
+  if (source)     { params.push(source);     conditions.push(`source     = $${params.length}`); }
+  if (session_id) { params.push(`%${session_id}%`); conditions.push(`session_id ILIKE $${params.length}`); }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -60,4 +62,26 @@ sessionsRouter.get('/stats', async (_req: Request, res: Response): Promise<void>
     by_channel: byChannel.rows,
     by_source:  bySource.rows,
   });
+});
+
+// GET /sessions/:id — full session detail + all events
+sessionsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
+  const session_id = req.params.id;
+
+  const [sessionRow, eventsRow] = await Promise.all([
+    pgPool.query(`SELECT * FROM sessions WHERE session_id = $1`, [session_id]),
+    pgPool.query(
+      `SELECT timestamp, page_url, referrer
+       FROM   events
+       WHERE  session_id = $1
+       ORDER  BY timestamp ASC`,
+      [session_id],
+    ),
+  ]);
+
+  if (sessionRow.rows.length === 0) {
+    res.status(404).json({ error: 'Session not found' }); return;
+  }
+
+  res.json({ session: sessionRow.rows[0], events: eventsRow.rows });
 });
