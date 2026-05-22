@@ -1,8 +1,7 @@
-feat: session detail view + session ID search
+fix: deduplicate A/B test redirect events (same path within 5s, keep later)
 
-- Sessions tab: search by session ID (partial match, debounced)
-- Sessions tab: click any row to open detail view
-- New route /session/:id renders SessionDetailView
-- SessionDetailView: attribution card, session meta card, full journey timeline
-- admin-api: GET /sessions/:id returns session + all events ordered by time
-- admin-api: GET /sessions supports ?session_id= filter (ILIKE partial match)
+- Worker: deduplicateEvents() collapses same-session + same-pathname events
+  within 5 seconds, keeping the later URL (variant). Fixes page_count inflation.
+- Backfill: same dedup logic applied when regenerating sessions from DB events.
+- SessionDetailView: displayEvents computed deduplicates journey for historical data.
+- Worker INSERT now uses ON CONFLICT DO NOTHING for safety.

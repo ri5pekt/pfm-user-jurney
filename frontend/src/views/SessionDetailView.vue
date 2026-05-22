@@ -102,16 +102,16 @@
 
       <!-- Journey timeline -->
       <div class="card journey-card">
-        <div class="card-title">Journey <span class="event-count">({{ events.length }} events)</span></div>
+        <div class="card-title">Journey <span class="event-count">({{ displayEvents.length }} events)</span></div>
         <div class="timeline">
           <div
-            v-for="(ev, idx) in events"
+            v-for="(ev, idx) in displayEvents"
             :key="idx"
             class="timeline-item"
           >
             <div class="tl-left">
-              <div class="tl-dot" :class="{ first: idx === 0, last: idx === events.length - 1 }" />
-              <div v-if="idx < events.length - 1" class="tl-line" />
+              <div class="tl-dot" :class="{ first: idx === 0, last: idx === displayEvents.length - 1 }" />
+              <div v-if="idx < displayEvents.length - 1" class="tl-line" />
             </div>
             <div class="tl-body">
               <div class="tl-time">{{ eventTime(ev.timestamp) }}</div>
@@ -199,6 +199,28 @@ function urlPath(url: string) {
     return (u.pathname || '/') + (u.search ? u.search.slice(0, 60) + (u.search.length > 60 ? '…' : '') : '')
   } catch { return url.slice(0, 60) }
 }
+
+// Deduplicate A/B redirect pairs: same pathname within 5s → keep the later one
+const displayEvents = computed(() => {
+  const DEDUP_MS = 5000
+  const result: EventRow[] = []
+  let prev: { path: string; timeMs: number; idx: number } | null = null
+
+  for (const ev of events.value) {
+    let path = '/'
+    try { path = new URL(ev.page_url).pathname } catch { path = ev.page_url }
+    const timeMs = new Date(ev.timestamp).getTime()
+
+    if (prev && prev.path === path && timeMs - prev.timeMs <= DEDUP_MS) {
+      result[prev.idx] = ev          // replace earlier event with later (variant) URL
+      prev = { path, timeMs, idx: prev.idx }
+    } else {
+      prev = { path, timeMs, idx: result.length }
+      result.push(ev)
+    }
+  }
+  return result
+})
 
 const duration = computed(() => {
   if (!session.value) return '—'
