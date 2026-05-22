@@ -301,6 +301,10 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else if (/\bmail\.google\b/.test(host))       { attr.source = 'Gmail';          attr.medium = 'email';    attr.channel = 'email';           }
       // Microsoft Edge news / content recommendation
       else if (/\bedgepilot\b/.test(host))          { attr.source = 'Microsoft Edge'; attr.medium = 'referral'; attr.channel = 'referral';        }
+      // Shopping browser extensions — don't indicate real traffic source
+      else if (/\bcapitaloneshopping\b|\bjoinhoney\b|\bshopeye\b|\bhoney\b/.test(host)) {
+        attr.source = 'direct'; attr.medium = 'none'; attr.channel = 'direct';
+      }
       // Email security URL scanner — pre-scans links, not a real user
       else if (/\besvalabs\b|\burlsand\b/.test(host)) { attr.source = 'direct'; attr.medium = 'none'; attr.channel = 'direct'; }
       // Afterpay / BNPL redirect back to site — treat as direct (mid-checkout)
