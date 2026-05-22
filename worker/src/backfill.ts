@@ -2,16 +2,8 @@
  * One-time backfill: regenerate sessions table from all existing events in the DB.
  * Run with: npx ts-node src/backfill.ts
  */
-import { Pool } from 'pg';
+import { pgPool } from './lib/postgres';
 import { parseAttribution } from './lib/attribution';
-
-const pool = new Pool({
-  host:     process.env.POSTGRES_HOST     || 'localhost',
-  port:     parseInt(process.env.POSTGRES_PORT || '5432'),
-  database: process.env.POSTGRES_DB       || 'pfm_journeys',
-  user:     process.env.POSTGRES_USER     || 'pfm_user',
-  password: process.env.POSTGRES_PASSWORD || 'devpassword',
-});
 
 const DEDUP_WINDOW_MS = 5000;
 
@@ -21,7 +13,7 @@ function getBasePath(url: string): string {
 
 async function run() {
   console.log('Connecting to DB…');
-  const client = await pool.connect();
+  const client = await pgPool.connect();
 
   try {
     // Load all events ordered by timestamp (oldest first)
@@ -119,7 +111,7 @@ async function run() {
 
   } finally {
     client.release();
-    await pool.end();
+    await pgPool.end();
   }
 }
 
