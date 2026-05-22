@@ -2,13 +2,12 @@ import { Router, Request, Response } from 'express';
 import { isBotRequest } from '../middleware/botFilter';
 import { redisClient } from '../lib/redis';
 
-// Regional store subpaths — excluded from tracking for now
+// Regional store subpaths — excluded from tracking
 const REGIONAL_PREFIXES = ['/es/', '/fr/', '/de/', '/ca/', '/gb/', '/au/', '/it/'];
 
 function isRegionalUrl(url: string): boolean {
   try {
     const { pathname } = new URL(url);
-    // Match both /gb/... (with content) and bare /gb or /gb? (redirect pages)
     return REGIONAL_PREFIXES.some((p) =>
       pathname.startsWith(p) || pathname === p.slice(0, -1),
     );
@@ -17,7 +16,7 @@ function isRegionalUrl(url: string): boolean {
   }
 }
 
-// Paths that are noise / internal tooling — not real user page views
+// Noise paths — internal tools, WooCommerce null products, etc.
 const NOISE_PATTERNS = [
   /\/product\/null(\/|$|\?)/,
   /\/product\/undefined(\/|$|\?)/,
@@ -33,9 +32,11 @@ function isNoisyUrl(url: string): boolean {
     return false;
   }
 }
+
+interface CollectBody {
   session_id?: unknown;
-  page_url?: unknown;
-  referrer?: unknown;
+  page_url?:   unknown;
+  referrer?:   unknown;
 }
 
 export const collectRouter = Router();
@@ -56,7 +57,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const event = JSON.stringify({
     session_id,
     page_url,
-    referrer:   referrer,
+    referrer,
     user_agent: req.headers['user-agent'] || '',
     timestamp:  new Date().toISOString(),
   });
