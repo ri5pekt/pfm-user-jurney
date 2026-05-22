@@ -32,10 +32,45 @@
           <option value="referral">Referral</option>
           <option value="direct">Direct</option>
         </select>
+        <button
+          class="btn-filters"
+          :class="{ active: filtersActive }"
+          @click="showFilters = !showFilters"
+        >
+          Filters<span v-if="filtersActive" class="filter-badge">{{ activeFilterCount }}</span>
+        </button>
         <button class="btn-refresh" :disabled="loading" @click="load">
           <span :class="{ spin: loading }">↻</span> Refresh
         </button>
       </div>
+    </div>
+
+    <!-- ── Filter panel ────────────────────────────────────────── -->
+    <div v-if="showFilters" class="filter-panel">
+      <div class="fp-row">
+        <label class="fp-label">Min pages</label>
+        <input
+          v-model.number="minPages"
+          type="number" min="0" step="1"
+          class="fp-number"
+          placeholder="Any"
+          @change="goTo(1)"
+        />
+        <span class="fp-hint">Show sessions with at least N pages</span>
+      </div>
+      <div class="fp-divider" />
+      <div class="fp-row">
+        <label class="fp-label">Completed orders</label>
+        <button
+          class="fp-toggle"
+          :class="{ on: ordersOnly }"
+          @click="ordersOnly = !ordersOnly; goTo(1)"
+        >
+          <span class="fp-toggle-knob" />
+        </button>
+        <span class="fp-hint">Only sessions that reached the thank-you page</span>
+      </div>
+      <button v-if="filtersActive" class="fp-clear" @click="clearFilters">Clear filters</button>
     </div>
 
     <!-- ── Stats bar ──────────────────────────────────────────── -->
@@ -127,10 +162,20 @@ const limit         = 20
 const loading       = ref(false)
 const filterChannel = ref('')
 const searchId      = ref('')
+const showFilters   = ref(false)
+const minPages      = ref<number | null>(null)
+const ordersOnly    = ref(false)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
+const filtersActive   = computed(() => (minPages.value !== null && minPages.value > 0) || ordersOnly.value)
+const activeFilterCount = computed(() => {
+  let n = 0
+  if (minPages.value && minPages.value > 0) n++
+  if (ordersOnly.value) n++
+  return n
+})
 
 async function load() {
   loading.value = true
@@ -138,6 +183,8 @@ async function load() {
     const params: Record<string, unknown> = { page: page.value, limit }
     if (filterChannel.value) params.channel = filterChannel.value
     if (searchId.value.trim()) params.session_id = searchId.value.trim()
+    if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
+    if (ordersOnly.value) params.orders_only = '1'
     const { data } = await api.get('/sessions', { params })
     sessions.value = data.sessions
     total.value    = data.total
@@ -173,6 +220,12 @@ function onSearchInput() {
 
 function clearSearch() {
   searchId.value = ''
+  goTo(1)
+}
+
+function clearFilters() {
+  minPages.value  = null
+  ordersOnly.value = false
   goTo(1)
 }
 
@@ -247,6 +300,59 @@ h2 { font-size: 1rem; font-weight: 600; }
   padding: 2px 4px; border-radius: 3px;
 }
 .search-clear:hover { color: var(--text); }
+
+/* Filters button */
+.btn-filters {
+  display: flex; align-items: center; gap: 5px;
+  padding: .38rem .75rem; border-radius: 6px; font-size: .8rem; font-weight: 500;
+  cursor: pointer; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--soft); transition: border-color .15s, color .15s;
+}
+.btn-filters:hover  { border-color: var(--accent); color: var(--accent); }
+.btn-filters.active { border-color: var(--accent); color: var(--accent); background: #f0fdfb; }
+.filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; font-size: .65rem; font-weight: 700;
+  background: var(--accent); color: #fff;
+}
+
+/* Filter panel */
+.filter-panel {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;
+  padding: .85rem 1rem; background: var(--surface);
+  border: 1.5px solid var(--accent); border-radius: 10px;
+}
+.fp-row   { display: flex; align-items: center; gap: .6rem; }
+.fp-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
+.fp-label { font-size: .78rem; font-weight: 600; color: var(--soft); white-space: nowrap; text-transform: uppercase; letter-spacing: .04em; }
+.fp-hint  { font-size: .75rem; color: var(--soft); }
+.fp-number {
+  width: 70px; padding: .35rem .55rem;
+  border: 1.5px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font-size: .82rem;
+}
+.fp-number:focus { outline: none; border-color: var(--accent); }
+
+/* Toggle switch */
+.fp-toggle {
+  position: relative; width: 36px; height: 20px; border-radius: 10px;
+  background: var(--border); border: none; cursor: pointer;
+  transition: background .2s; padding: 0; flex-shrink: 0;
+}
+.fp-toggle.on { background: var(--accent); }
+.fp-toggle-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  transition: transform .2s;
+}
+.fp-toggle.on .fp-toggle-knob { transform: translateX(16px); }
+
+.fp-clear {
+  margin-left: auto; padding: .3rem .7rem; border-radius: 6px;
+  background: none; border: 1.5px solid var(--border);
+  font-size: .78rem; color: var(--soft); cursor: pointer; transition: border-color .15s, color .15s;
+}
+.fp-clear:hover { border-color: #ef4444; color: #ef4444; }
 
 .filter-select {
   padding: .38rem .7rem;
