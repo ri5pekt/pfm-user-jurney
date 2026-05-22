@@ -59,6 +59,18 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (isRegionalUrl(page_url)) return;
   if (isNoisyUrl(page_url)) return;
 
+  // Cross-batch deduplication: drop if same session+path was seen within 5 seconds
+  let pathname = page_url;
+  try { pathname = new URL(page_url).pathname; } catch { /* keep raw url */ }
+  const dedupKey = `dedup:${session_id}`;
+  try {
+    const lastPath = await redisClient.get(dedupKey);
+    if (lastPath === pathname) return; // duplicate within TTL window — drop
+    await redisClient.set(dedupKey, pathname, 'EX', 5);
+  } catch {
+    // Redis error — proceed without dedup rather than dropping the event
+  }
+
   const event = JSON.stringify({
     session_id,
     page_url,
