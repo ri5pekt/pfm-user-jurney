@@ -35,6 +35,17 @@ const EMAIL_RELAY_DOMAINS = [
   'mailanyone.net',
 ];
 
+// Parse Google Analytics cross-domain linker (_gl) parameter.
+// Format: 1*{hash}*key1*val1*key2*val2...
+function parseGlParam(gl: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const parts = gl.split('*');
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    result[parts[i]] = parts[i + 1] || '';
+  }
+  return result;
+}
+
 export function parseAttribution(pageUrl: string, referrer: string): Attribution {
   const attr: Attribution = {
     source: '', medium: '', channel: '', placement: '',
@@ -294,6 +305,16 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = attr.utm_source;
     attr.medium  = attr.utm_medium || 'referral';
     attr.channel = utmChannel(attr.utm_medium);
+
+    // Enrich placement from _gl cross-domain linker if present
+    // _gcl_au or FPAU in _gl means this user originally came via Google Ads
+    if (!attr.placement && params.has('_gl')) {
+      const gl = parseGlParam(params.get('_gl')!);
+      if (gl['_gcl_au'] || gl['FPAU']) {
+        attr.placement = 'via Google Ads';
+      }
+    }
+
     return attr;
   }
 
@@ -360,6 +381,15 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else { attr.source = host; attr.medium = 'referral'; attr.channel = 'referral'; }
 
     } catch { /* ignore malformed referrer */ }
+
+    // Enrich placement from _gl even for referral-attributed sessions
+    if (!attr.placement && params.has('_gl')) {
+      const gl = parseGlParam(params.get('_gl')!);
+      if (gl['_gcl_au'] || gl['FPAU']) {
+        attr.placement = 'via Google Ads';
+      }
+    }
+
     return attr;
   }
 
