@@ -162,7 +162,7 @@ const limit         = 20
 const loading       = ref(false)
 const filterChannel = ref('')
 const searchId      = ref('')
-const showFilters   = ref(false)
+const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
 const ordersOnly    = ref(false)
 
