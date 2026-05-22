@@ -383,18 +383,42 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
 
     } catch { /* ignore malformed referrer */ }
 
-    // Enrich placement from _gl even for referral-attributed sessions
-    if (!attr.placement && params.has('_gl')) {
+    // Enrich placement from _gl even for referral/direct-attributed sessions.
+    // If attribution ended up as direct but _gl carries Google Ads cookies,
+    // upgrade the channel to paid_search.
+    if (params.has('_gl')) {
       const gl = parseGlParam(params.get('_gl')!);
       if (gl['_gcl_au'] || gl['FPAU']) {
-        attr.placement = 'via Google Ads';
+        if (attr.channel === 'direct') {
+          attr.source    = 'Google';
+          attr.medium    = 'cpc';
+          attr.channel   = 'paid_search';
+          attr.placement = 'via Google Ads';
+        } else {
+          attr.placement = attr.placement || 'via Google Ads';
+        }
       }
     }
 
     return attr;
   }
 
-  // ── 14. Direct ────────────────────────────────────────────────────
+  // ── 14. _gl cross-domain linker — Google Ads signal ──────────────────────
+  // FPAU (First-Party Ads User) and _gcl_au (Ads Conversion Linker) are written
+  // by the Google Ads tag on every ad click. Their presence in _gl means the
+  // user arrived via a Google Ad even with no UTMs / referrer.
+  if (params.has('_gl')) {
+    const gl = parseGlParam(params.get('_gl')!);
+    if (gl['_gcl_au'] || gl['FPAU']) {
+      attr.source    = 'Google';
+      attr.medium    = 'cpc';
+      attr.channel   = 'paid_search';
+      attr.placement = 'via Google Ads';
+      return attr;
+    }
+  }
+
+  // ── 15. Direct ────────────────────────────────────────────────────
   attr.source  = 'direct';
   attr.medium  = 'none';
   attr.channel = 'direct';
