@@ -10,9 +10,10 @@ REPO = "https://github.com/ri5pekt/pfm-user-jurney.git"
 APP_DIR = "/var/www/pfm-uj/app"
 
 # Production .env — set real secrets here
+# NOTE: never hardcode real passwords here. Set them directly on the VPS .env file.
 PROD_ENV = """POSTGRES_DB=pfm_journeys
 POSTGRES_USER=pfm_user
-POSTGRES_PASSWORD=REDACTED
+POSTGRES_PASSWORD=CHANGE_ME
 
 REDIS_URL=redis://redis:6379
 REDIS_QUEUE_KEY=events_queue
@@ -21,9 +22,9 @@ PORT_COLLECTOR=3001
 ALLOWED_ORIGINS=https://particleformen.com
 
 PORT_ADMIN=3002
-JWT_SECRET=replace_with_long_random_string
+JWT_SECRET=CHANGE_ME_use_a_long_random_string
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=replace_with_strong_password
+ADMIN_PASSWORD=CHANGE_ME
 
 WORKER_BATCH_SIZE=100
 WORKER_INTERVAL_MS=3000

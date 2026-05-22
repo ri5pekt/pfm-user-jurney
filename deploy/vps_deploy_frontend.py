@@ -42,28 +42,7 @@ sftp.close()
 run(f"chmod -R 755 {REMOTE_FRONTEND}", "chmod 755")
 run(f"ls {REMOTE_FRONTEND}", "verify upload")
 
-# 2. Update admin-api .env (add ADMIN_EMAIL if missing)
-print("\n=== Update .env for admin-api ===")
-run(f"grep -q ADMIN_EMAIL {APP_DIR}/.env && echo EXISTS || echo MISSING", "check ADMIN_EMAIL")
-out, _ = (lambda cmd: (
-    lambda _, stdout, __: (stdout.read().decode().strip(), stdout.channel.recv_exit_status())
-)(*c.exec_command(cmd, timeout=10)))(
-    f"grep -q ADMIN_EMAIL {APP_DIR}/.env && echo EXISTS || echo MISSING"
-)
-if "MISSING" in run(f"grep ADMIN_EMAIL {APP_DIR}/.env || echo MISSING"):
-    run(
-        f"echo 'ADMIN_EMAIL=denis@particleformen.com' >> {APP_DIR}/.env && "
-        f"echo 'ADMIN_PASSWORD=REDACTED' >> {APP_DIR}/.env",
-        "append credentials"
-    )
-else:
-    run(
-        f"sed -i 's|^ADMIN_EMAIL=.*|ADMIN_EMAIL=denis@particleformen.com|' {APP_DIR}/.env && "
-        f"sed -i 's|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=REDACTED|' {APP_DIR}/.env",
-        "update credentials"
-    )
-
-# 3. git pull + rebuild admin-api
+# 2. git pull + rebuild admin-api
 print("\n=== git pull + rebuild admin-api ===")
 run(f"cd {APP_DIR} && git pull origin master", "git pull", timeout=30)
 run(f"cd {APP_DIR} && docker compose build admin-api", "build admin-api", timeout=300)
@@ -74,13 +53,6 @@ time.sleep(4)
 # 4. Verify
 print("\n=== Verify ===")
 run(f"curl -s http://127.0.0.1:3102/health", "admin-api health")
-run(
-    'curl -s -X POST http://127.0.0.1:3102/auth/login '
-    '-H "Content-Type: application/json" '
-    '-d \'{"email":"denis@particleformen.com","password":"REDACTED"}\' '
-    '| head -c 50',
-    "login test"
-)
 run(f"ls -la {REMOTE_FRONTEND}", "frontend files")
 
 print("\n=== Done ===")

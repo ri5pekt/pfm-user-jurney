@@ -1,4 +1,4 @@
-import paramiko, sys, io, json
+import paramiko, sys, io, json, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -8,11 +8,14 @@ def run(cmd):
     _, out, _ = c.exec_command(cmd, timeout=20, get_pty=True)
     return out.read().decode("utf-8", errors="replace").strip()
 
+# Read password from local secrets file (never commit this file)
+PW = open(os.path.join(os.path.dirname(__file__), ".secrets")).read().strip().split("ADMIN_PASSWORD=")[-1].splitlines()[0]
+
 # Get token
 login = run(
-    'curl -s -X POST http://127.0.0.1:3102/auth/login '
-    '-H "Content-Type: application/json" '
-    '-d \'{"email":"denis@particleformen.com","password":"REDACTED"}\''
+    f'curl -s -X POST http://127.0.0.1:3102/auth/login '
+    f'-H "Content-Type: application/json" '
+    f'-d \'{{"email":"denis@particleformen.com","password":"{PW}"}}\''
 )
 token = json.loads(login)["token"]
 
