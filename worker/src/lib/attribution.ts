@@ -131,7 +131,30 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     return attr;
   }
 
-  // ── 9. Standard UTM fallback ───────────────────────────────────────
+  // ── 9. Facebook Click ID (fbclid) — Meta paid without nbt ──────────
+  // Catches utm_source=MetaAds campaigns and any other FB paid traffic
+  // that uses fbclid but not nbt
+  if (params.has('fbclid')) {
+    attr.source  = 'Facebook';
+    attr.medium  = 'paid_social';
+    attr.channel = 'paid_social';
+    const nbPlacement = params.get('nb_placement') || '';
+    if (nbPlacement) attr.placement = PLACEMENT_LABELS[nbPlacement] || nbPlacement;
+    return attr;
+  }
+
+  // ── 10. Google Click ID (gclid) — Google Ads without nbt ───────────
+  if (params.has('gclid')) {
+    const adtype    = params.get('nb_adtype') || params.get('utm_medium') || '';
+    const isShopping = adtype.includes('pla') || adtype.includes('shopping');
+    attr.source      = 'Google Ads';
+    attr.medium      = 'cpc';
+    attr.channel     = isShopping ? 'paid_shopping' : 'paid_search';
+    attr.campaign_id = params.get('gad_campaignid') || '';
+    return attr;
+  }
+
+  // ── 11. Standard UTM fallback ──────────────────────────────────────
   if (attr.utm_source) {
     attr.source  = attr.utm_source;
     attr.medium  = attr.utm_medium || 'referral';
@@ -139,23 +162,26 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     return attr;
   }
 
-  // ── 10. Referrer-based organic / social ───────────────────────────
+  // ── 12. Referrer-based organic / social ───────────────────────────
   if (referrer) {
     try {
       const host = new URL(referrer).hostname.replace(/^www\./, '');
-      if      (/\bgoogle\b/.test(host))    { attr.source = 'Google';    attr.medium = 'organic'; attr.channel = 'organic_search'; }
-      else if (/\bbing\b/.test(host))      { attr.source = 'Bing';      attr.medium = 'organic'; attr.channel = 'organic_search'; }
-      else if (/\byahoo\b/.test(host))     { attr.source = 'Yahoo';     attr.medium = 'organic'; attr.channel = 'organic_search'; }
-      else if (/\bfacebook\b|fb\.com/.test(host)) { attr.source = 'Facebook';  attr.medium = 'social'; attr.channel = 'organic_social'; }
-      else if (/\binstagram\b/.test(host)) { attr.source = 'Instagram'; attr.medium = 'social'; attr.channel = 'organic_social'; }
-      else if (/\bpinterest\b/.test(host)) { attr.source = 'Pinterest'; attr.medium = 'social'; attr.channel = 'organic_social'; }
-      else if (/\bparticleformen\b/.test(host)) { attr.source = 'internal'; attr.medium = 'internal'; attr.channel = 'internal'; }
+      if      (/\bgoogle\b/.test(host))           { attr.source = 'Google';    attr.medium = 'organic'; attr.channel = 'organic_search'; }
+      else if (/\bbing\b/.test(host))             { attr.source = 'Bing';      attr.medium = 'organic'; attr.channel = 'organic_search'; }
+      else if (/\byahoo\b/.test(host))            { attr.source = 'Yahoo';     attr.medium = 'organic'; attr.channel = 'organic_search'; }
+      else if (/\bduckduckgo\b/.test(host))       { attr.source = 'DuckDuckGo'; attr.medium = 'organic'; attr.channel = 'organic_search'; }
+      else if (/\bbrave\b/.test(host))            { attr.source = 'Brave';     attr.medium = 'organic'; attr.channel = 'organic_search'; }
+      else if (/\bfacebook\b|fb\.com/.test(host)) { attr.source = 'Facebook';  attr.medium = 'social';  attr.channel = 'organic_social'; }
+      else if (/\binstagram\b/.test(host))        { attr.source = 'Instagram'; attr.medium = 'social';  attr.channel = 'organic_social'; }
+      else if (/\bpinterest\b/.test(host))        { attr.source = 'Pinterest'; attr.medium = 'social';  attr.channel = 'organic_social'; }
+      // Same-site referrer on first event = session expired mid-browse or tab reload → direct
+      else if (/\bparticleformen\b/.test(host))   { attr.source = 'direct';    attr.medium = 'none';    attr.channel = 'direct'; }
       else { attr.source = host; attr.medium = 'referral'; attr.channel = 'referral'; }
     } catch { /* ignore */ }
     return attr;
   }
 
-  // ── 11. Direct ─────────────────────────────────────────────────────
+  // ── 13. Direct ─────────────────────────────────────────────────────
   attr.source  = 'direct';
   attr.medium  = 'none';
   attr.channel = 'direct';
@@ -168,7 +194,9 @@ function utmChannel(medium: string): string {
     case 'paid_social': case 'social_paid':     return 'paid_social';
     case 'social':                              return 'organic_social';
     case 'email':                               return 'email';
+    case 'sms':                                 return 'sms';
     case 'organic':                             return 'organic_search';
+    case 'paid':                                return 'paid_other';
     default:                                    return 'referral';
   }
 }

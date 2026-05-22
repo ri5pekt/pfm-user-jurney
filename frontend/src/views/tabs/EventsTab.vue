@@ -122,10 +122,14 @@ function urlPath(url: string): string {
 }
 
 function refDomain(url: string): string {
-  if (!url) return '—'
+  if (!url) return 'Direct'
   try {
     const u = new URL(url)
     const host = u.hostname.replace(/^www\./, '')
+    // Same-site referrer = internal navigation, show path
+    if (/particleformen/.test(host)) {
+      return u.pathname === '/' ? host : u.pathname
+    }
     const path = u.pathname === '/' ? '' : u.pathname
     return host + path
   }

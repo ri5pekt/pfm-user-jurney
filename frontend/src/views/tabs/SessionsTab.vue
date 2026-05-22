@@ -15,6 +15,7 @@
           <option value="paid_social">Paid Social</option>
           <option value="paid_other">Paid Other</option>
           <option value="email">Email</option>
+          <option value="sms">SMS</option>
           <option value="organic_search">Organic Search</option>
           <option value="organic_shopping">Organic Shopping</option>
           <option value="organic_social">Organic Social</option>
@@ -160,12 +161,12 @@ const CHANNEL_LABELS: Record<string, string> = {
   paid_social:      'Paid Social',
   paid_other:       'Paid Other',
   email:            'Email',
+  sms:              'SMS',
   organic_search:   'Organic Search',
   organic_shopping: 'Organic Shopping',
   organic_social:   'Organic Social',
   referral:         'Referral',
   direct:           'Direct',
-  internal:         'Internal',
 }
 
 function channelLabel(ch: string) { return CHANNEL_LABELS[ch] || ch || '—' }
