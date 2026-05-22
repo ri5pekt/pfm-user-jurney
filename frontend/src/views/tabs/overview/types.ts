@@ -4,6 +4,8 @@ export interface FunnelItem {
   type?: string
   count: number
   pct: number
+  orders?: number
+  convRate?: number
 }
 
 export interface SimpleNode {

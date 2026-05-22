@@ -88,13 +88,14 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const sessionIds = sessionsRes.rows.map(r => r.session_id);
 
     // Count per source — group by source name only (ignore channel) to avoid duplicates
-    // e.g. klaviyo via email + klaviyo via sms → single "Klaviyo" node
-    const sourceCount = new Map<string, { label: string; count: number }>();
+    const sourceCount  = new Map<string, { label: string; count: number }>();
+    const sessionSrc   = new Map<string, string>(); // session_id → source key
     for (const s of sessionsRes.rows) {
       const key   = s.source || 'direct';
       const label = !s.source || s.source === 'direct' ? 'Direct' : s.source;
       if (!sourceCount.has(key)) sourceCount.set(key, { label, count: 0 });
       sourceCount.get(key)!.count++;
+      sessionSrc.set(s.session_id, key);
     }
 
     // Load all events for these sessions
@@ -113,6 +114,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const pageCount          = new Map<string, number>();
     const productCount       = new Map<string, number>();
     const postPurchaseCount  = new Map<string, number>();
+    const sourceOrders       = new Map<string, number>(); // orders per source
     let cartCount     = 0;
     let checkoutCount = 0;
     let thankyouCount = 0;
@@ -135,7 +137,11 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       }
       if (hadCart)     cartCount++;
       if (hadCheckout) checkoutCount++;
-      if (hadThankyou) thankyouCount++;
+      if (hadThankyou) {
+        thankyouCount++;
+        const srcKey = sessionSrc.get(sid) ?? 'direct';
+        sourceOrders.set(srcKey, (sourceOrders.get(srcKey) ?? 0) + 1);
+      }
     }
 
     const pct   = (n: number) => Math.round((n / total) * 100);
@@ -147,7 +153,11 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     res.json({
       total,
       sources: Array.from(sourceCount.entries())
-        .map(([id, { label, count }]) => ({ id, label, count, pct: pct(count) }))
+        .map(([id, { label, count }]) => {
+          const orders   = sourceOrders.get(id) ?? 0;
+          const convRate = count > 0 ? Math.round(orders / count * 1000) / 10 : 0;
+          return { id, label, count, pct: pct(count), orders, convRate };
+        })
         .sort((a, b) => b.count - a.count),
       landingPages:      toArr(landingCount),
       pages:             toArr(pageCount),
