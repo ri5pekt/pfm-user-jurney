@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 
@@ -267,6 +267,8 @@ function channelClass(ch: string) {
 }
 
 onMounted(() => { load(); loadStats() })
+// Refresh data when navigating back from session detail (keep-alive restore)
+onActivated(() => { load(); loadStats() })
 </script>
 
 <style scoped>

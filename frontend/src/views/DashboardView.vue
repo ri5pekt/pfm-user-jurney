@@ -39,6 +39,8 @@ import OverviewTab  from './tabs/OverviewTab.vue'
 import EventsTab    from './tabs/EventsTab.vue'
 import SessionsTab  from './tabs/SessionsTab.vue'
 
+defineOptions({ name: 'DashboardView' })
+
 const auth   = useAuthStore()
 const router = useRouter()
 const route  = useRoute()
