@@ -8,10 +8,8 @@ const PORT = Number(process.env.PORT_COLLECTOR) || 3001;
 
 app.use(
   cors({
-    // Allow all origins at the CORS header level — the originCheck middleware
-    // handles domain validation and silently drops requests from unknown origins.
-    // This prevents 500s from CORS callbacks and allows proper preflight responses.
     origin: true,
+    credentials: true,
     methods: ['POST', 'OPTIONS'],
   }),
 );
