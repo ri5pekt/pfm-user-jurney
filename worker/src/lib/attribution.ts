@@ -346,8 +346,17 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else if (/\besvalabs\b|\burlsand\b/.test(host)) { attr.source = 'direct'; attr.medium = 'none'; attr.channel = 'direct'; }
       // Afterpay / BNPL redirect back to site — treat as direct (mid-checkout)
       else if (/\bafterpay\b/.test(host))           { attr.source = 'direct';      attr.medium = 'none';    attr.channel = 'direct';          }
-      // Same-site referrer on first event = session expired mid-browse → direct
-      else if (/\bparticleformen\b/.test(host))     { attr.source = 'direct';      attr.medium = 'none';    attr.channel = 'direct';          }
+      // Same-site referrer on first event = session expired mid-browse.
+      // But if the internal referrer URL itself carries tracking params
+      // (e.g. user came via email link → browsed → session renewed),
+      // inherit attribution from those params instead of marking direct.
+      else if (/\bparticleformen\b/.test(host)) {
+        const refAttr = parseAttribution(referrer, '');
+        if (refAttr.channel && refAttr.channel !== 'direct') {
+          return refAttr;
+        }
+        attr.source = 'direct'; attr.medium = 'none'; attr.channel = 'direct';
+      }
       else { attr.source = host; attr.medium = 'referral'; attr.channel = 'referral'; }
 
     } catch { /* ignore malformed referrer */ }

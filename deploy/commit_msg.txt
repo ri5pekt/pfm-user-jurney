@@ -1,7 +1,7 @@
-fix: deduplicate A/B test redirect events (same path within 5s, keep later)
+fix: attribute internal-referrer sessions correctly
 
-- Worker: deduplicateEvents() collapses same-session + same-pathname events
-  within 5 seconds, keeping the later URL (variant). Fixes page_count inflation.
-- Backfill: same dedup logic applied when regenerating sessions from DB events.
-- SessionDetailView: displayEvents computed deduplicates journey for historical data.
-- Worker INSERT now uses ON CONFLICT DO NOTHING for safety.
+When the first event's referrer is an internal particleformen.com URL
+that itself carries tracking params (nb_klid, _kx, utm_source, fbclid etc.),
+parse attribution from those params instead of marking as direct.
+Fixes sessions where the user's session TTL expired mid-browse after
+arriving via email/ad link, then continued browsing.
