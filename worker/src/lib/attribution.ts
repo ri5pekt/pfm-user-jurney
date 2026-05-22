@@ -124,7 +124,9 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   }
 
   // ── 3. Google click IDs (gclid / wbraid / gbraid) ──────────────────
-  if (params.has('gclid') || params.has('wbraid') || params.has('gbraid')) {
+  // Also handle malformed `amp;wbraid` (from HTML entity decoding of &amp;wbraid= in ad URLs)
+  const hasWbraid = params.has('wbraid') || params.has('amp;wbraid');
+  if (params.has('gclid') || hasWbraid || params.has('gbraid')) {
     const adtype = params.get('nb_adtype') || params.get('utm_medium') || '';
     attr.source      = 'Google Ads';
     attr.medium      = 'cpc';
@@ -162,7 +164,9 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   }
 
   // ── 6. Klaviyo email / SMS ─────────────────────────────────────────
-  if (params.has('nb_klid') || params.has('_kx')) {
+  // nb_klid / _kx = Klaviyo click tracking
+  // mtke = Klaviyo "My Transactional Key Email" — used in order/account links
+  if (params.has('nb_klid') || params.has('_kx') || params.has('mtke')) {
     attr.source  = 'Klaviyo';
     attr.medium  = params.get('utm_medium')?.toLowerCase() === 'sms' ? 'sms' : 'email';
     attr.channel = attr.medium === 'sms' ? 'sms' : 'email';
