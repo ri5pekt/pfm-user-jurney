@@ -31,7 +31,8 @@ const EMAIL_RELAY_DOMAINS = [
   'webmailb.netzero.net', 'webmail1.earthlink.net',
   // ISP webmail portals
   'mail3.spectrum.net', 'myemail.optimum.net', 'myemail.suddenlink.net',
-  'webmail1.earthlink.net',
+  // Email link-tracking / relay
+  'mailanyone.net',
 ];
 
 export function parseAttribution(pageUrl: string, referrer: string): Attribution {
@@ -42,7 +43,17 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
 
   let params: URLSearchParams;
   try {
-    params = new URL(pageUrl).searchParams;
+    const url = new URL(pageUrl);
+    params = url.searchParams;
+
+    // Some ad platforms embed tracking params in the URL fragment (e.g. /?#key=val&fbclid=...)
+    // Merge hash params as fallback if not already present in search
+    if (url.hash && url.hash.length > 1) {
+      const hashParams = new URLSearchParams(url.hash.slice(1));
+      for (const [k, v] of hashParams) {
+        if (!params.has(k)) params.set(k, v);
+      }
+    }
   } catch {
     return attr;
   }
@@ -118,10 +129,12 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     return attr;
   }
 
-  // ── 4b. Bing Ads without nbt/msclkid — nb_bmt or nb_qs present ─────
+  // ── 4b. Bing Ads without nbt/msclkid — nb_bmt, nb_qs, or nb_li_ms present
   // nb_bmt = Bing match type (be=exact, bp=phrase, bb=broad)
   // nb_qs  = search query captured by Nextbee Bing pixel
-  if (params.has('nb_bmt') || (params.has('nb_qs') && params.has('nb_oii'))) {
+  // nb_li_ms / nb_lp_ms = Nextbee Bing landing-page score params
+  if (params.has('nb_bmt') || (params.has('nb_qs') && params.has('nb_oii')) ||
+      (params.has('nb_li_ms') && params.has('nb_lp_ms'))) {
     attr.source  = 'Bing Ads';
     attr.medium  = 'cpc';
     attr.channel = 'paid_search';
@@ -240,6 +253,27 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.channel = 'email';
       return attr;
     }
+    // Wunderkind (email/SMS remarketing platform)
+    if (src.includes('wunderkind')) {
+      attr.source  = 'Wunderkind';
+      attr.medium  = 'email';
+      attr.channel = 'email';
+      return attr;
+    }
+    // Klaviyo generic (utm_source=Klaviyo or utm_source=Klaviyo+Campaign without nb_klid)
+    if (src.includes('klaviyo')) {
+      attr.source  = 'Klaviyo';
+      attr.medium  = med === 'sms' ? 'sms' : 'email';
+      attr.channel = med === 'sms' ? 'sms' : 'email';
+      return attr;
+    }
+    // utm_source=campaign is Klaviyo's default when no custom source is set
+    if (src === 'campaign' && (med === 'email' || med === 'sms')) {
+      attr.source  = 'Klaviyo';
+      attr.medium  = med;
+      attr.channel = med === 'sms' ? 'sms' : 'email';
+      return attr;
+    }
     // AppsLovin / Applov (utm_source=applovin or axon)
     if (src === 'applovin' || src === 'axon') {
       attr.source  = 'Applov';
@@ -282,6 +316,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       const host = new URL(referrer).hostname.replace(/^www\./, '');
 
       if      (/\bgoogle\b/.test(host))             { attr.source = 'Google';      attr.medium = 'organic'; attr.channel = 'organic_search';  }
+      else if (/\bsyndicatedsearch\.goog$/.test(host)) { attr.source = 'Google';  attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\bbing\b/.test(host))               { attr.source = 'Bing';        attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\byahoo\b/.test(host))              { attr.source = 'Yahoo';       attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\bduckduckgo\b/.test(host))         { attr.source = 'DuckDuckGo';  attr.medium = 'organic'; attr.channel = 'organic_search';  }
@@ -299,6 +334,8 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
         attr.source = 'Email'; attr.medium = 'email'; attr.channel = 'email';
       }
       else if (/\bmail\.google\b/.test(host))       { attr.source = 'Gmail';          attr.medium = 'email';    attr.channel = 'email';           }
+      // Narvar (post-purchase shipping notification emails)
+      else if (/\bnarvar\b/.test(host))             { attr.source = 'Narvar';         attr.medium = 'email';    attr.channel = 'email';           }
       // Microsoft Edge news / content recommendation
       else if (/\bedgepilot\b/.test(host))          { attr.source = 'Microsoft Edge'; attr.medium = 'referral'; attr.channel = 'referral';        }
       // Shopping browser extensions — don't indicate real traffic source

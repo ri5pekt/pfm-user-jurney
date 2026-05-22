@@ -1,17 +1,30 @@
 channel	source	count	pct
-direct|direct|53|37.1
-email|Klaviyo|36|25.2
-paid_social|Facebook|26|18.2
-paid_social|Audience Network|6|4.2
-paid_search|Google Ads|5|3.5
-paid_other|flyover_section|4|2.8
-paid_other|flyover_podcast|2|1.4
-paid_other|patriot|2|1.4
-paid_other|atwave|2|1.4
-paid_social|Snapchat|1|0.7
-referral|tv|1|0.7
-email|Beehiiv|1|0.7
-organic_shopping|Google Shopping|1|0.7
-paid_other|Applov|1|0.7
-organic_social|Facebook|1|0.7
-sms|Klaviyo|1|0.7
+email|Klaviyo|441|30.2
+paid_social|Facebook|423|29.0
+direct|direct|248|17.0
+paid_search|Google Ads|76|5.2
+paid_social|Snapchat|36|2.5
+paid_shopping|Google Ads|35|2.4
+sms|Klaviyo|35|2.4
+paid_other|flyover_section|21|1.4
+paid_social|Audience Network|20|1.4
+paid_other|atwave|18|1.2
+paid_other|patriot|16|1.1
+paid_search|Bing Ads|16|1.1
+email|Beehiiv|14|1.0
+paid_other|Applov|12|0.8
+organic_shopping|Google Shopping|12|0.8
+organic_search|Google|7|0.5
+referral|gentlemantoday_article|5|0.3
+paid_other|flyover_podcast|5|0.3
+paid_other|mobilize|4|0.3
+referral|tv|3|0.2
+organic_search|Bing|2|0.1
+paid_social|Instagram|2|0.1
+organic_social|Facebook|2|0.1
+email|Email|2|0.1
+paid_other|bayareatimes|1|0.1
+referral|tracking.narvar.com|1|0.1
+referral|absolute-forum.com|1|0.1
+organic_search|DuckDuckGo|1|0.1
+paid_other|echo|1|0.1
