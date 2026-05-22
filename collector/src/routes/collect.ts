@@ -8,7 +8,10 @@ const REGIONAL_PREFIXES = ['/es/', '/fr/', '/de/', '/ca/', '/gb/', '/au/', '/it/
 function isRegionalUrl(url: string): boolean {
   try {
     const { pathname } = new URL(url);
-    return REGIONAL_PREFIXES.some((p) => pathname.startsWith(p));
+    // Match both /gb/... (with content) and bare /gb or /gb? (redirect pages)
+    return REGIONAL_PREFIXES.some((p) =>
+      pathname.startsWith(p) || pathname === p.slice(0, -1),
+    );
   } catch {
     return false;
   }
