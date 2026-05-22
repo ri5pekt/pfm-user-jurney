@@ -17,6 +17,7 @@ function isRegionalUrl(url: string): boolean {
 interface CollectBody {
   session_id?: unknown;
   page_url?: unknown;
+  referrer?: unknown;
 }
 
 export const collectRouter = Router();
@@ -27,6 +28,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const body       = req.body as CollectBody;
   const session_id = typeof body.session_id === 'string' ? body.session_id.trim() : '';
   const page_url   = typeof body.page_url   === 'string' ? body.page_url.trim()   : '';
+  const referrer   = typeof body.referrer   === 'string' ? body.referrer.trim()   : '';
 
   if (!session_id || !page_url) return;
   if (isBotRequest(req.headers['user-agent'])) return;
@@ -35,7 +37,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const event = JSON.stringify({
     session_id,
     page_url,
-    referrer:   req.headers['referer'] || req.headers['referrer'] || '',
+    referrer:   referrer,
     user_agent: req.headers['user-agent'] || '',
     timestamp:  new Date().toISOString(),
   });
