@@ -83,7 +83,7 @@
           </div>
           <div class="attr-row">
             <span class="attr-label">Pages</span>
-            <span class="attr-value">{{ session.page_count }}</span>
+            <span class="attr-value">{{ displayEvents.length }}</span>
           </div>
           <div class="attr-row">
             <span class="attr-label">Entry Page</span>
