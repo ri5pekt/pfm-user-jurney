@@ -27,8 +27,11 @@ const PLACEMENT_LABELS: Record<string, string> = {
 
 // Domains that are email relay / proxy services — referrer means the user came from email
 const EMAIL_RELAY_DOMAINS = [
-  'deref-mail.com', 'pstmrk.it', 'track.pstmrk.it', 'edgepilot.com',
-  'link.edgepilot.com', 'webmailb.netzero.net', 'webmail1.earthlink.net',
+  'deref-mail.com', 'pstmrk.it', 'track.pstmrk.it',
+  'webmailb.netzero.net', 'webmail1.earthlink.net',
+  // ISP webmail portals
+  'mail3.spectrum.net', 'myemail.optimum.net', 'myemail.suddenlink.net',
+  'webmail1.earthlink.net',
 ];
 
 export function parseAttribution(pageUrl: string, referrer: string): Attribution {
@@ -109,6 +112,16 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
 
   // ── 4. Microsoft / Bing click ID (msclkid) ─────────────────────────
   if (params.has('msclkid')) {
+    attr.source  = 'Bing Ads';
+    attr.medium  = 'cpc';
+    attr.channel = 'paid_search';
+    return attr;
+  }
+
+  // ── 4b. Bing Ads without nbt/msclkid — nb_bmt or nb_qs present ─────
+  // nb_bmt = Bing match type (be=exact, bp=phrase, bb=broad)
+  // nb_qs  = search query captured by Nextbee Bing pixel
+  if (params.has('nb_bmt') || (params.has('nb_qs') && params.has('nb_oii'))) {
     attr.source  = 'Bing Ads';
     attr.medium  = 'cpc';
     attr.channel = 'paid_search';
@@ -220,6 +233,13 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.channel = 'email';
       return attr;
     }
+    // Yotpo (loyalty / rewards emails)
+    if (src.includes('yotpo') || src.includes('rewards') || src.includes('loyalty') || src.includes('points')) {
+      attr.source  = 'Yotpo';
+      attr.medium  = 'email';
+      attr.channel = 'email';
+      return attr;
+    }
     // AppsLovin / Applov (utm_source=applovin or axon)
     if (src === 'applovin' || src === 'axon') {
       attr.source  = 'Applov';
@@ -278,7 +298,11 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else if (EMAIL_RELAY_DOMAINS.some(d => host.includes(d)))  {
         attr.source = 'Email'; attr.medium = 'email'; attr.channel = 'email';
       }
-      else if (/\bmail\.google\b/.test(host))       { attr.source = 'Gmail';       attr.medium = 'email';   attr.channel = 'email';           }
+      else if (/\bmail\.google\b/.test(host))       { attr.source = 'Gmail';          attr.medium = 'email';    attr.channel = 'email';           }
+      // Microsoft Edge news / content recommendation
+      else if (/\bedgepilot\b/.test(host))          { attr.source = 'Microsoft Edge'; attr.medium = 'referral'; attr.channel = 'referral';        }
+      // Email security URL scanner — pre-scans links, not a real user
+      else if (/\besvalabs\b|\burlsand\b/.test(host)) { attr.source = 'direct'; attr.medium = 'none'; attr.channel = 'direct'; }
       // Afterpay / BNPL redirect back to site — treat as direct (mid-checkout)
       else if (/\bafterpay\b/.test(host))           { attr.source = 'direct';      attr.medium = 'none';    attr.channel = 'direct';          }
       // Same-site referrer on first event = session expired mid-browse → direct

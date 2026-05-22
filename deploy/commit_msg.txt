@@ -1,0 +1,8 @@
+fix: attribution fixes from data analysis round 2
+
+- nb_bmt/nb_qs without nbt -> Bing Ads paid_search
+- Yotpo loyalty/rewards emails -> source=Yotpo, channel=email
+- link.edgepilot.com -> referral|Microsoft Edge (was wrongly email relay)
+- ISP webmail (spectrum.net, optimum.net, suddenlink.net) -> email
+- urlsand.esvalabs.com email scanner -> treated as direct
+- /producto/ paths added to regional filter (WPML Spanish)

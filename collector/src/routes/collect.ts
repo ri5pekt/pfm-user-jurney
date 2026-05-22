@@ -5,12 +5,17 @@ import { redisClient } from '../lib/redis';
 // Regional store subpaths — excluded from tracking
 const REGIONAL_PREFIXES = ['/es/', '/fr/', '/de/', '/ca/', '/gb/', '/au/', '/it/'];
 
+// WooCommerce translated product paths (WPML)
+const TRANSLATED_PATH_PATTERNS = [/^\/producto\//];
+
 function isRegionalUrl(url: string): boolean {
   try {
     const { pathname } = new URL(url);
-    return REGIONAL_PREFIXES.some((p) =>
+    if (REGIONAL_PREFIXES.some((p) =>
       pathname.startsWith(p) || pathname === p.slice(0, -1),
-    );
+    )) return true;
+    if (TRANSLATED_PATH_PATTERNS.some((p) => p.test(pathname))) return true;
+    return false;
   } catch {
     return false;
   }
