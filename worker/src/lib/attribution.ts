@@ -30,7 +30,8 @@ const EMAIL_RELAY_DOMAINS = [
   'deref-mail.com', 'pstmrk.it', 'track.pstmrk.it',
   'webmailb.netzero.net', 'webmail1.earthlink.net',
   // ISP webmail portals
-  'mail3.spectrum.net', 'myemail.optimum.net', 'myemail.suddenlink.net',
+  'mail3.spectrum.net', 'mail3.spectrumbusiness.net',
+  'myemail.optimum.net', 'myemail.suddenlink.net',
   // Email link-tracking / relay
   'mailanyone.net',
 ];
@@ -215,6 +216,17 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     return attr;
   }
 
+  // ── 11b. Facebook DPA / Catalog Ads — brid parameter ────────────────
+  // brid (Bundle Request ID) is set by Facebook on DPA/Catalog ad clicks,
+  // often without fbclid when loaded via the Facebook in-app browser.
+  // media_type=image is also a Facebook-specific catalog signal.
+  if (params.has('brid') || params.get('media_type') === 'image') {
+    attr.source  = 'Facebook';
+    attr.medium  = 'paid_social';
+    attr.channel = 'paid_social';
+    return attr;
+  }
+
   // ── 12. UTM-based attribution ──────────────────────────────────────
   if (attr.utm_source) {
     const src = attr.utm_source.toLowerCase().replace(/\s+/g, '');
@@ -347,6 +359,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else if (/\byahoo\b/.test(host))              { attr.source = 'Yahoo';       attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\bduckduckgo\b/.test(host))         { attr.source = 'DuckDuckGo';  attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\bbrave\b/.test(host))              { attr.source = 'Brave';       attr.medium = 'organic'; attr.channel = 'organic_search';  }
+      else if (/\bnortonsafesearch\b/.test(host))   { attr.source = 'Norton';      attr.medium = 'organic'; attr.channel = 'organic_search';  }
       else if (/\bfacebook\b|^fb\.com$|^l\.facebook|^m\.facebook|^lm\.facebook/.test(host)) {
         attr.source = 'Facebook';   attr.medium = 'social';  attr.channel = 'organic_social';
       }
