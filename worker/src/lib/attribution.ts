@@ -40,7 +40,8 @@ const EMAIL_RELAY_DOMAINS = [
 function parseGlParam(gl: string): Record<string, string> {
   const result: Record<string, string> = {};
   const parts = gl.split('*');
-  for (let i = 1; i + 1 < parts.length; i += 2) {
+  // parts[0] = version ('1'), parts[1] = hash, then key/value pairs from index 2
+  for (let i = 2; i + 1 < parts.length; i += 2) {
     result[parts[i]] = parts[i + 1] || '';
   }
   return result;
