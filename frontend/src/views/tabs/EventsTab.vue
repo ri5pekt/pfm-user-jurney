@@ -123,8 +123,13 @@ function urlPath(url: string): string {
 
 function refDomain(url: string): string {
   if (!url) return '—'
-  try { return new URL(url).hostname.replace(/^www\./, '') }
-  catch { return url.slice(0, 20) }
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    const path = u.pathname === '/' ? '' : u.pathname
+    return host + path
+  }
+  catch { return url.slice(0, 60) }
 }
 
 onMounted(load)

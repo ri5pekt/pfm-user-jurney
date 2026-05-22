@@ -24,8 +24,9 @@
 
     <!-- ── Content ───────────────────────────────────────────── -->
     <main class="content">
-      <OverviewTab v-if="active === 'overview'" />
-      <EventsTab   v-else-if="active === 'events'" />
+      <OverviewTab  v-if="active === 'overview'" />
+      <EventsTab    v-else-if="active === 'events'" />
+      <SessionsTab  v-else-if="active === 'sessions'" />
     </main>
   </div>
 </template>
@@ -34,15 +35,17 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import OverviewTab from './tabs/OverviewTab.vue'
-import EventsTab   from './tabs/EventsTab.vue'
+import OverviewTab  from './tabs/OverviewTab.vue'
+import EventsTab    from './tabs/EventsTab.vue'
+import SessionsTab  from './tabs/SessionsTab.vue'
 
 const auth   = useAuthStore()
 const router = useRouter()
 
 const tabs = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'events',   label: 'Events'   },
+  { id: 'overview',  label: 'Overview'  },
+  { id: 'events',    label: 'Events'    },
+  { id: 'sessions',  label: 'Sessions'  },
 ]
 
 const active = ref('events')
