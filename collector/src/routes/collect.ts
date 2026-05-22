@@ -2,6 +2,18 @@ import { Router, Request, Response } from 'express';
 import { isBotRequest } from '../middleware/botFilter';
 import { redisClient } from '../lib/redis';
 
+// Regional store subpaths — excluded from tracking for now
+const REGIONAL_PREFIXES = ['/es/', '/fr/', '/de/', '/ca/', '/gb/', '/au/', '/it/'];
+
+function isRegionalUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    return REGIONAL_PREFIXES.some((p) => pathname.startsWith(p));
+  } catch {
+    return false;
+  }
+}
+
 interface CollectBody {
   session_id?: unknown;
   page_url?: unknown;
@@ -10,22 +22,22 @@ interface CollectBody {
 export const collectRouter = Router();
 
 collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  // Silent 204 — never reveal errors to the client (fire-and-forget pattern)
   res.status(204).end();
 
-  const body = req.body as CollectBody;
+  const body       = req.body as CollectBody;
   const session_id = typeof body.session_id === 'string' ? body.session_id.trim() : '';
-  const page_url = typeof body.page_url === 'string' ? body.page_url.trim() : '';
+  const page_url   = typeof body.page_url   === 'string' ? body.page_url.trim()   : '';
 
   if (!session_id || !page_url) return;
   if (isBotRequest(req.headers['user-agent'])) return;
+  if (isRegionalUrl(page_url)) return;
 
   const event = JSON.stringify({
     session_id,
     page_url,
-    referrer: req.headers['referer'] || req.headers['referrer'] || '',
+    referrer:   req.headers['referer'] || req.headers['referrer'] || '',
     user_agent: req.headers['user-agent'] || '',
-    timestamp: new Date().toISOString(),
+    timestamp:  new Date().toISOString(),
   });
 
   try {
