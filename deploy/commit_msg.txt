@@ -1,7 +1,8 @@
-fix: attribute internal-referrer sessions correctly
+fix: run backfill after every deploy truncation
 
-When the first event's referrer is an internal particleformen.com URL
-that itself carries tracking params (nb_klid, _kx, utm_source, fbclid etc.),
-parse attribution from those params instead of marking as direct.
-Fixes sessions where the user's session TTL expired mid-browse after
-arriving via email/ad link, then continued browsing.
+Sessions table was being truncated but only rebuilt from new Redis events,
+leaving old events orphaned (session showing wrong page count / entry page).
+
+- vps_deploy_all.py: runs backfill after truncation via docker exec
+- worker/package.json: add "backfill" script (node dist/backfill.js)
+- worker/src/backfill.ts: uses POSTGRES_HOST env var (works in container)

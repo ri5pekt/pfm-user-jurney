@@ -52,6 +52,9 @@ run(f"chmod -R 755 {REMOTE_FRONTEND}", "chmod")
 print("\n=== Clear sessions for re-attribution ===")
 print("  ->", pg("TRUNCATE TABLE sessions"))
 
+print("\n=== Rebuild sessions from all events (backfill) ===")
+run("docker exec app-worker-1 node dist/backfill.js", "backfill", 120)
+
 time.sleep(5)
 
 print("\n=== Verify ===")
