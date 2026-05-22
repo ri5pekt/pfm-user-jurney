@@ -12,7 +12,7 @@
 
     <!-- ── Sub-header ─────────────────────────────────────────── -->
     <div class="sub-header">
-      <button class="back-btn" @click="$router.back()">← Back to Sessions</button>
+      <button class="back-btn" @click="$router.push('/?tab=sessions')">← Back to Sessions</button>
       <div class="session-title" v-if="session">
         <span class="session-id-label">Session</span>
         <code class="session-id">{{ session.session_id }}</code>

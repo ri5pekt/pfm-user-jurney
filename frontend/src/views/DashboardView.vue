@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import OverviewTab  from './tabs/OverviewTab.vue'
 import EventsTab    from './tabs/EventsTab.vue'
@@ -41,6 +41,7 @@ import SessionsTab  from './tabs/SessionsTab.vue'
 
 const auth   = useAuthStore()
 const router = useRouter()
+const route  = useRoute()
 
 const tabs = [
   { id: 'overview',  label: 'Overview'  },
@@ -48,7 +49,7 @@ const tabs = [
   { id: 'sessions',  label: 'Sessions'  },
 ]
 
-const active = ref('events')
+const active = ref((route.query.tab as string) || 'events')
 
 function handleLogout() {
   auth.logout()
