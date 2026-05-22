@@ -1,0 +1,72 @@
+# Production compose — host nginx on the VPS proxies into these containers.
+# Containers bind to 127.0.0.1 only — never exposed on 0.0.0.0 / public internet.
+# Do NOT add a Docker nginx service here; it would conflict with the host nginx
+# that is already managing other projects on ports 80/443.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/migrate.sql:/docker-entrypoint-initdb.d/migrate.sql:ro
+    networks:
+      - uj_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - uj_net
+
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # 127.0.0.1 only — host nginx proxies here, never public
+      - "127.0.0.1:3101:3001"
+    depends_on:
+      - redis
+    networks:
+      - uj_net
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - uj_net
+
+  admin-api:
+    build:
+      context: ./admin-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # 127.0.0.1 only — host nginx proxies here, never public
+      - "127.0.0.1:3102:3002"
+    depends_on:
+      - postgres
+    networks:
+      - uj_net
+
+volumes:
+  postgres_data:
+
+networks:
+  uj_net:
+    driver: bridge

@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build output
+dist/
+*/dist/
+frontend/dist/
+
+# Environment
+.env
+
+# Deploy scripts may contain server passwords — keep local only
+# Re-create from deploy/vps_init.py template when needed
+# deploy/*.py  ← uncomment this line if you add passwords to the scripts
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Docker volumes (local)
+postgres_data/
