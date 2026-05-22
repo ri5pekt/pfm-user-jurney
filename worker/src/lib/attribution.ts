@@ -87,6 +87,13 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     if (network === 'adwords') {
       const adtype     = params.get('nb_adtype') || '';
       const isShopping = adtype.startsWith('pla');
+      // platform 'ytv' = YouTube Video / TrueView ad
+      if (platform === 'ytv') {
+        attr.source  = 'YouTube Ads';
+        attr.medium  = 'paid_video';
+        attr.channel = 'paid_video';
+        return attr;
+      }
       attr.source  = 'Google Ads';
       attr.medium  = 'cpc';
       attr.channel = isShopping ? 'paid_shopping' : 'paid_search';
@@ -117,7 +124,15 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   // ── 2. Google Ads — gad_source / gad_campaignid ────────────────────
   if (params.has('gad_source') || params.has('gad_campaignid')) {
     attr.campaign_id = params.get('gad_campaignid') || '';
+    const gadSrc     = params.get('gad_source') || '';
     const adtype     = params.get('nb_adtype') || '';
+    // gad_source=2 = Google Demand Gen campaign (YouTube, Gmail, Discover)
+    if (gadSrc === '2') {
+      attr.source  = 'YouTube Ads';
+      attr.medium  = 'paid_video';
+      attr.channel = 'paid_video';
+      return attr;
+    }
     attr.source  = 'Google Ads';
     attr.medium  = 'cpc';
     attr.channel = adtype.startsWith('pla') ? 'paid_shopping' : 'paid_search';
@@ -125,14 +140,25 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   }
 
   // ── 3. Google click IDs (gclid / wbraid / gbraid) ──────────────────
-  // Also handle malformed `amp;wbraid` (from HTML entity decoding of &amp;wbraid= in ad URLs)
+  // gbraid = Google Browser Ad ID — exclusively used by YouTube & Demand Gen campaigns
+  // wbraid = web-to-app measurement (can appear on YouTube and app campaigns)
+  // gclid  = standard Google Ads click ID (Search, Display)
   const hasWbraid = params.has('wbraid') || params.has('amp;wbraid');
-  if (params.has('gclid') || hasWbraid || params.has('gbraid')) {
+  const hasGbraid = params.has('gbraid');
+  const hasGclid  = params.has('gclid');
+  if (hasGclid || hasWbraid || hasGbraid) {
+    attr.campaign_id = params.get('gad_campaignid') || '';
+    // gbraid is only issued for YouTube / Demand Gen ad clicks
+    if (hasGbraid) {
+      attr.source  = 'YouTube Ads';
+      attr.medium  = 'paid_video';
+      attr.channel = 'paid_video';
+      return attr;
+    }
     const adtype = params.get('nb_adtype') || params.get('utm_medium') || '';
     attr.source      = 'Google Ads';
     attr.medium      = 'cpc';
     attr.channel     = adtype.includes('pla') || adtype.includes('shopping') ? 'paid_shopping' : 'paid_search';
-    attr.campaign_id = params.get('gad_campaignid') || '';
     return attr;
   }
 
@@ -446,6 +472,7 @@ function utmChannel(medium: string): string {
   switch ((medium || '').toLowerCase()) {
     case 'cpc': case 'ppc': case 'paid_search': return 'paid_search';
     case 'paid_social': case 'social_paid':     return 'paid_social';
+    case 'paid_video':                          return 'paid_video';
     case 'social':                              return 'organic_social';
     case 'email':                               return 'email';
     case 'sms':                                 return 'sms';
