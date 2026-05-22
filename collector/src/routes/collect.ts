@@ -17,7 +17,22 @@ function isRegionalUrl(url: string): boolean {
   }
 }
 
-interface CollectBody {
+// Paths that are noise / internal tooling — not real user page views
+const NOISE_PATTERNS = [
+  /\/product\/null(\/|$|\?)/,
+  /\/product\/undefined(\/|$|\?)/,
+  /\/lpage\/page-validator(\/|$|\?)/,
+  /\/null(\/|$|\?)/,
+];
+
+function isNoisyUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    return NOISE_PATTERNS.some((p) => p.test(pathname));
+  } catch {
+    return false;
+  }
+}
   session_id?: unknown;
   page_url?: unknown;
   referrer?: unknown;
@@ -36,6 +51,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (!session_id || !page_url) return;
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isRegionalUrl(page_url)) return;
+  if (isNoisyUrl(page_url)) return;
 
   const event = JSON.stringify({
     session_id,
