@@ -1,0 +1,282 @@
+import { Router, Request, Response } from 'express';
+import { pgPool } from '../lib/postgres';
+
+export const overviewRouter = Router();
+
+function normalizePath(url: string): string {
+  try {
+    let p = new URL(url).pathname;
+    p = p.replace(/\/$/, '') || '/';
+    // Strip numeric-only segments (order IDs, subscription IDs, etc.)
+    // e.g. /my-account/view-order/3875040 → /my-account/view-order
+    p = p.replace(/\/\d+/g, '');
+    return p || '/';
+  } catch {
+    return '/';
+  }
+}
+
+const PATH_LABELS: Record<string, string> = {
+  '/':                      'Home',
+  '/cart-page':             'Cart',
+  '/checkout':              'Checkout',
+  '/thank-you-order':       '✓ Thank You',
+  '/best-sellers':          'Best Sellers',
+  '/all-products':          'All Products',
+  '/build-your-own-bundle': 'Bundle Builder',
+  '/particle-magazine':     'Magazine',
+  '/faq-support':           'FAQ',
+  '/my-account':            'My Account',
+  '/my-account/orders':     'My Orders',
+  '/my-account/view-order': 'View Order',
+  '/my-account/view-subscription': 'My Subscription',
+  '/my-account/particle-rewards':  'Rewards',
+  '/refund-policy':         'Refund Policy',
+  '/pages/about':           'About',
+};
+
+function pathLabel(path: string): string {
+  if (PATH_LABELS[path]) return PATH_LABELS[path];
+  const segs = path.split('/').filter(Boolean);
+  if (!segs.length) return 'Home';
+  if (segs[0] === 'product' && segs[1])
+    return segs[1].replace(/^particle-/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (segs[0] === 'lpage' && segs[1])
+    return 'LP: ' + segs[1].replace(/^particle-/, '').split('-').slice(0, 4).join(' ');
+  return '/' + segs.slice(0, 2).join('/');
+}
+
+function pageType(path: string): string {
+  if (path.includes('thank-you'))  return 'thankyou';
+  if (path.includes('checkout'))   return 'checkout';
+  if (path.includes('cart'))       return 'cart';
+  if (path.startsWith('/lpage'))   return 'landing';
+  if (path.startsWith('/product')) return 'product';
+  if (path === '/')                return 'home';
+  // Post-purchase account pages — shown after Thank You in the funnel
+  if (path.startsWith('/my-account/view-order') ||
+      path.startsWith('/my-account/orders') ||
+      path.startsWith('/my-account/view-subscription')) return 'postpurchase';
+  return 'page';
+}
+
+// GET /overview/funnel?start=ISO&end=ISO
+overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const start = req.query.start as string | undefined;
+    const end   = req.query.end   as string | undefined;
+
+    // Build WHERE clause from date range
+    const conditions: string[] = [];
+    const values: unknown[]    = [];
+    if (start) { conditions.push(`first_seen >= $${values.push(start)}`); }
+    if (end)   { conditions.push(`first_seen <= $${values.push(end)}`);   }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const sessionsRes = await pgPool.query<{ session_id: string; channel: string; source: string }>(
+      `SELECT session_id, channel, source FROM sessions ${where} ORDER BY first_seen DESC`,
+      values,
+    );
+
+    const total = sessionsRes.rows.length;
+    if (total === 0) {
+      res.json({ total: 0, sources: [], landingPages: [], pages: [], productPages: [],
+        cart: { count: 0, pct: 0 }, checkout: { count: 0, pct: 0 }, thankyou: { count: 0, pct: 0 } });
+      return;
+    }
+
+    const sessionIds = sessionsRes.rows.map(r => r.session_id);
+
+    // Count per source — group by source name only (ignore channel) to avoid duplicates
+    // e.g. klaviyo via email + klaviyo via sms → single "Klaviyo" node
+    const sourceCount = new Map<string, { label: string; count: number }>();
+    for (const s of sessionsRes.rows) {
+      const key   = s.source || 'direct';
+      const label = !s.source || s.source === 'direct' ? 'Direct' : s.source;
+      if (!sourceCount.has(key)) sourceCount.set(key, { label, count: 0 });
+      sourceCount.get(key)!.count++;
+    }
+
+    // Load all events for these sessions
+    const eventsRes = await pgPool.query<{ session_id: string; page_url: string }>(
+      `SELECT session_id, page_url FROM events WHERE session_id = ANY($1) ORDER BY session_id, timestamp`,
+      [sessionIds],
+    );
+
+    const sessionEvents = new Map<string, string[]>();
+    for (const ev of eventsRes.rows) {
+      if (!sessionEvents.has(ev.session_id)) sessionEvents.set(ev.session_id, []);
+      sessionEvents.get(ev.session_id)!.push(ev.page_url);
+    }
+
+    const landingCount       = new Map<string, number>();
+    const pageCount          = new Map<string, number>();
+    const productCount       = new Map<string, number>();
+    const postPurchaseCount  = new Map<string, number>();
+    let cartCount     = 0;
+    let checkoutCount = 0;
+    let thankyouCount = 0;
+
+    for (const sid of sessionIds) {
+      const urls    = sessionEvents.get(sid) ?? [];
+      const visited = new Set<string>();
+      for (const url of urls) visited.add(normalizePath(url));
+
+      let hadCart = false, hadCheckout = false, hadThankyou = false;
+      for (const path of visited) {
+        const type = pageType(path);
+        if      (type === 'landing')                 landingCount.set(path,      (landingCount.get(path)      ?? 0) + 1);
+        else if (type === 'home' || type === 'page') pageCount.set(path,         (pageCount.get(path)         ?? 0) + 1);
+        else if (type === 'product')                 productCount.set(path,      (productCount.get(path)      ?? 0) + 1);
+        else if (type === 'postpurchase')             postPurchaseCount.set(path, (postPurchaseCount.get(path) ?? 0) + 1);
+        else if (type === 'cart')                    hadCart     = true;
+        else if (type === 'checkout')                hadCheckout = true;
+        else if (type === 'thankyou')                hadThankyou = true;
+      }
+      if (hadCart)     cartCount++;
+      if (hadCheckout) checkoutCount++;
+      if (hadThankyou) thankyouCount++;
+    }
+
+    const pct   = (n: number) => Math.round((n / total) * 100);
+    const toArr = (m: Map<string, number>) =>
+      Array.from(m.entries())
+        .map(([path, count]) => ({ id: path, label: pathLabel(path), type: pageType(path), count, pct: pct(count) }))
+        .sort((a, b) => b.count - a.count);
+
+    res.json({
+      total,
+      sources: Array.from(sourceCount.entries())
+        .map(([id, { label, count }]) => ({ id, label, count, pct: pct(count) }))
+        .sort((a, b) => b.count - a.count),
+      landingPages:      toArr(landingCount),
+      pages:             toArr(pageCount),
+      productPages:      toArr(productCount),
+      postPurchasePages: toArr(postPurchaseCount),
+      cart:     { count: cartCount,     pct: pct(cartCount) },
+      checkout: { count: checkoutCount, pct: pct(checkoutCount) },
+      thankyou: { count: thankyouCount, pct: pct(thankyouCount) },
+    });
+  } catch (err) {
+    console.error('[admin-api] /overview/funnel error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /overview/flow?min_pages=2&limit=300
+overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const minPages = Math.max(2, parseInt(req.query.min_pages as string) || 2);
+    const limit    = Math.min(1000, parseInt(req.query.limit as string) || 300);
+
+    // Load multi-page sessions ordered by recency
+    const sessionsRes = await pgPool.query<{
+      session_id: string; channel: string; source: string;
+    }>(
+      `SELECT session_id, channel, source
+       FROM sessions
+       WHERE page_count >= $1
+       ORDER BY first_seen DESC
+       LIMIT $2`,
+      [minPages, limit],
+    );
+
+    if (sessionsRes.rows.length === 0) {
+      res.json({ nodes: [], edges: [] });
+      return;
+    }
+
+    const sessionIds = sessionsRes.rows.map(r => r.session_id);
+    const sessionMeta = new Map(sessionsRes.rows.map(r => [r.session_id, r]));
+
+    // Load events for these sessions
+    const eventsRes = await pgPool.query<{
+      session_id: string; page_url: string; timestamp: string;
+    }>(
+      `SELECT session_id, page_url, timestamp
+       FROM events
+       WHERE session_id = ANY($1)
+       ORDER BY session_id, timestamp`,
+      [sessionIds],
+    );
+
+    // Group events by session
+    const sessionEvents = new Map<string, { page_url: string; ts: number }[]>();
+    for (const ev of eventsRes.rows) {
+      if (!sessionEvents.has(ev.session_id)) sessionEvents.set(ev.session_id, []);
+      sessionEvents.get(ev.session_id)!.push({
+        page_url: ev.page_url,
+        ts: new Date(ev.timestamp).getTime(),
+      });
+    }
+
+    const nodeCount = new Map<string, number>();
+    const nodeType  = new Map<string, string>();
+    const nodeLabel = new Map<string, string>();
+    const edgeCount = new Map<string, number>();
+
+    for (const session of sessionsRes.rows) {
+      const events = sessionEvents.get(session.session_id) ?? [];
+      if (events.length === 0) continue;
+
+      // Deduplicate consecutive same-path events within 5s
+      const paths: string[] = [];
+      let lastPath = '';
+      let lastTs   = 0;
+      for (const ev of events) {
+        const path = normalizePath(ev.page_url);
+        if (path === lastPath && ev.ts - lastTs < 5000) continue;
+        paths.push(path);
+        lastPath = path;
+        lastTs   = ev.ts;
+      }
+      if (paths.length === 0) continue;
+
+      // Source node
+      const srcId    = `src:${session.channel}:${session.source}`;
+      const srcLabel = session.source === 'direct' ? 'Direct' : session.source;
+      nodeCount.set(srcId, (nodeCount.get(srcId) ?? 0) + 1);
+      nodeType.set(srcId,  'source');
+      nodeLabel.set(srcId, srcLabel);
+
+      // First page
+      const firstId = `page:${paths[0]}`;
+      nodeCount.set(firstId, (nodeCount.get(firstId) ?? 0) + 1);
+      nodeType.set(firstId,  pageType(paths[0]));
+      nodeLabel.set(firstId, pathLabel(paths[0]));
+
+      // Source → first page edge
+      const e0 = `${srcId}||${firstId}`;
+      edgeCount.set(e0, (edgeCount.get(e0) ?? 0) + 1);
+
+      // Page → page edges
+      for (let i = 1; i < paths.length; i++) {
+        const fromId = `page:${paths[i - 1]}`;
+        const toId   = `page:${paths[i]}`;
+        nodeCount.set(toId, (nodeCount.get(toId) ?? 0) + 1);
+        nodeType.set(toId,  pageType(paths[i]));
+        nodeLabel.set(toId, pathLabel(paths[i]));
+
+        const ek = `${fromId}||${toId}`;
+        edgeCount.set(ek, (edgeCount.get(ek) ?? 0) + 1);
+      }
+    }
+
+    const nodes = Array.from(nodeCount.entries()).map(([id, count]) => ({
+      id,
+      label: nodeLabel.get(id) ?? id,
+      type:  nodeType.get(id)  ?? 'page',
+      count,
+    }));
+
+    const edges = Array.from(edgeCount.entries()).map(([key, count]) => {
+      const sep = key.indexOf('||');
+      return { source: key.slice(0, sep), target: key.slice(sep + 2), count };
+    });
+
+    res.json({ nodes, edges, sessions_analyzed: sessionsRes.rows.length });
+  } catch (err) {
+    console.error('[admin-api] /overview/flow error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});

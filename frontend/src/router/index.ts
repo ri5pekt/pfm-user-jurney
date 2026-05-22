@@ -12,12 +12,18 @@ const router = createRouter({
     {
       path: '/',
       component: () => import('@/views/DashboardView.vue'),
+      redirect: '/sessions',
+      children: [
+        { path: 'overview',  name: 'overview',  component: () => import('@/views/tabs/OverviewTab.vue')  },
+        { path: 'events',    name: 'events',    component: () => import('@/views/tabs/EventsTab.vue')    },
+        { path: 'sessions',  name: 'sessions',  component: () => import('@/views/tabs/SessionsTab.vue')  },
+      ],
     },
     {
       path: '/session/:id',
       component: () => import('@/views/SessionDetailView.vue'),
     },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    { path: '/:pathMatch(.*)*', redirect: '/sessions' },
   ],
 })
 

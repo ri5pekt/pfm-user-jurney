@@ -11,47 +11,42 @@
 
     <!-- ── Tabs ──────────────────────────────────────────────── -->
     <div class="tabs-bar">
-      <button
+      <router-link
         v-for="tab in tabs"
         :key="tab.id"
+        :to="'/' + tab.id"
         class="tab"
-        :class="{ active: active === tab.id }"
-        @click="active = tab.id"
+        active-class="active"
       >
         {{ tab.label }}
-      </button>
+      </router-link>
     </div>
 
     <!-- ── Content ───────────────────────────────────────────── -->
     <main class="content">
-      <OverviewTab  v-if="active === 'overview'" />
-      <EventsTab    v-else-if="active === 'events'" />
-      <SessionsTab  v-else-if="active === 'sessions'" />
+      <RouterView v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </RouterView>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import OverviewTab  from './tabs/OverviewTab.vue'
-import EventsTab    from './tabs/EventsTab.vue'
-import SessionsTab  from './tabs/SessionsTab.vue'
 
 defineOptions({ name: 'DashboardView' })
 
 const auth   = useAuthStore()
 const router = useRouter()
-const route  = useRoute()
 
 const tabs = [
   { id: 'overview',  label: 'Overview'  },
   { id: 'events',    label: 'Events'    },
   { id: 'sessions',  label: 'Sessions'  },
 ]
-
-const active = ref((route.query.tab as string) || 'events')
 
 function handleLogout() {
   auth.logout()
@@ -127,6 +122,7 @@ function handleLogout() {
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
+  text-decoration: none;
 }
 
 .tab:hover { color: var(--text); }
