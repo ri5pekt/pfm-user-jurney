@@ -46,6 +46,7 @@ const tabs = [
   { id: 'overview',  label: 'Overview'  },
   { id: 'events',    label: 'Events'    },
   { id: 'sessions',  label: 'Sessions'  },
+  { id: 'funnels',   label: 'Funnels'   },
 ]
 
 function handleLogout() {

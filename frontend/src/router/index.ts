@@ -17,6 +17,7 @@ const router = createRouter({
         { path: 'overview',  name: 'overview',  component: () => import('@/views/tabs/OverviewTab.vue')  },
         { path: 'events',    name: 'events',    component: () => import('@/views/tabs/EventsTab.vue')    },
         { path: 'sessions',  name: 'sessions',  component: () => import('@/views/tabs/SessionsTab.vue')  },
+        { path: 'funnels',   name: 'funnels',   component: () => import('@/views/FunnelsView.vue')       },
       ],
     },
     {
