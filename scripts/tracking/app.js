@@ -44,9 +44,18 @@
   // Auto-fire page_view on every page load
   send('page_view', location.href, document.referrer);
 
-  // Global API for custom events
-  // Usage: window.pfmTrack('order_completed', { order_id: '123', total: 89.99, currency: 'USD' })
-  window.pfmTrack = function (eventType, metadata) {
+  // Global API for custom events.
+  // Supports a pre-load queue: if code runs before this script (e.g. header vs footer),
+  // callers push to window.pfmTrack.q and we drain it here on init.
+  // Usage: window.pfmTrack('order_completed', { order_id: '123', value: 89.99, currency: 'USD' })
+  function track(eventType, metadata) {
     send(eventType, location.href, '', metadata || null);
-  };
+  }
+
+  var q = window.pfmTrack && window.pfmTrack.q;
+  if (q) {
+    for (var i = 0; i < q.length; i++) track(q[i][0], q[i][1]);
+  }
+
+  window.pfmTrack = track;
 })();
