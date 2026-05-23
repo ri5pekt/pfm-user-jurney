@@ -26,6 +26,7 @@ interface CollectBody {
   page_url?:    unknown;
   referrer?:    unknown;
   event_type?:  unknown;
+  metadata?:    unknown;
 }
 
 function getClientIp(req: import('express').Request): string | null {
@@ -46,9 +47,36 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const raw_type   = typeof body.event_type === 'string' ? body.event_type.trim().toLowerCase() : 'page_view';
   const event_type = EVENT_TYPE_RE.test(raw_type) ? raw_type : 'page_view';
 
+  // Accept metadata only if it is a plain non-array object; cap at 2 KB
+  const rawMeta = body.metadata;
+  let metadata: Record<string, unknown> | null = null;
+  if (rawMeta !== null && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+    const serialised = JSON.stringify(rawMeta);
+    if (serialised.length <= 2048) {
+      metadata = rawMeta as Record<string, unknown>;
+    }
+  }
+
   if (!session_id || !page_url) return;
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isNoisyUrl(page_url)) return;
+
+  // For order_completed: dedup by order_id — same order within 24h is silently dropped
+  if (event_type === 'order_completed') {
+    const orderId = typeof metadata?.order_id === 'string' || typeof metadata?.order_id === 'number'
+      ? String(metadata.order_id).trim()
+      : '';
+    if (orderId) {
+      const orderKey = `order:${session_id}:${orderId}`;
+      try {
+        const seen = await redisClient.get(orderKey);
+        if (seen) return; // duplicate order — drop
+        await redisClient.set(orderKey, '1', 'EX', 86400); // 24h TTL
+      } catch {
+        // Redis error — proceed rather than blocking the event
+      }
+    }
+  }
 
   // Dedup only applies to page_view events — custom events always pass through
   if (event_type === 'page_view') {
@@ -73,6 +101,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     referrer,
     user_agent: req.headers['user-agent'] || '',
     ip:         ip ?? '',
+    metadata:   metadata ?? null,
     timestamp:  new Date().toISOString(),
   });
 

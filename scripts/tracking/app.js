@@ -18,14 +18,18 @@
     } catch (e) { return uid(); }
   }
 
-  function send(eventType, pageUrl, referrer) {
+  function send(eventType, pageUrl, referrer, metadata) {
     try {
-      var p = JSON.stringify({
+      var payload = {
         session_id: sid(),
         event_type: eventType || 'page_view',
         page_url:   pageUrl   || location.href,
         referrer:   referrer  !== undefined ? referrer : document.referrer,
-      });
+      };
+      if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+        payload.metadata = metadata;
+      }
+      var p = JSON.stringify(payload);
       if (navigator.sendBeacon) {
         navigator.sendBeacon(URL, new Blob([p], { type: 'application/json' }));
       } else {
@@ -41,8 +45,8 @@
   send('page_view', location.href, document.referrer);
 
   // Global API for custom events
-  // Usage: window.pfmTrack('order_completed')
-  window.pfmTrack = function (eventType) {
-    send(eventType, location.href, '');
+  // Usage: window.pfmTrack('order_completed', { order_id: '123', total: 89.99, currency: 'USD' })
+  window.pfmTrack = function (eventType, metadata) {
+    send(eventType, location.href, '', metadata || null);
   };
 })();

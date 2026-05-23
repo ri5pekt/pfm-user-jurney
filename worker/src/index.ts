@@ -17,6 +17,7 @@ interface RawEvent {
   referrer:    string;
   user_agent:  string;
   ip:          string;
+  metadata:    Record<string, unknown> | null;
   timestamp:   string;
 }
 
@@ -75,8 +76,8 @@ async function drainBatch(): Promise<void> {
 
   // ── Insert events ────────────────────────────────────────────────
   await pgPool.query(
-    `INSERT INTO events (session_id, event_type, page_url, referrer, user_agent, timestamp)
-     SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
+    `INSERT INTO events (session_id, event_type, page_url, referrer, user_agent, timestamp, metadata)
+     SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::jsonb[])
      ON CONFLICT DO NOTHING`,
     [
       deduped.map(e => e.session_id),
@@ -85,6 +86,7 @@ async function drainBatch(): Promise<void> {
       deduped.map(e => e.referrer    || ''),
       deduped.map(e => e.user_agent  || ''),
       deduped.map(e => e.timestamp   || new Date().toISOString()),
+      deduped.map(e => e.metadata != null ? JSON.stringify(e.metadata) : null),
     ],
   );
 

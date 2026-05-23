@@ -133,6 +133,12 @@
                 </span>
               </div>
               <a class="tl-url" :href="ev.page_url" target="_blank" rel="noopener">{{ urlPath(ev.page_url) }}</a>
+              <div v-if="ev.metadata && Object.keys(ev.metadata).length" class="tl-meta">
+                <span v-for="(val, key) in ev.metadata" :key="key" class="tl-meta-item">
+                  <span class="tl-meta-key">{{ key }}</span>
+                  <span class="tl-meta-val">{{ formatMetaVal(key, val) }}</span>
+                </span>
+              </div>
               <div v-if="ev.referrer && idx === 0" class="tl-ref">from: {{ ev.referrer }}</div>
             </div>
           </div>
@@ -176,6 +182,7 @@ interface EventRow {
   event_type: string
   page_url:   string
   referrer:   string
+  metadata:   Record<string, unknown> | null
 }
 
 const route   = useRoute()
@@ -258,6 +265,15 @@ const CHANNEL_LABELS: Record<string, string> = {
   email: 'Email', sms: 'SMS',
   organic_search: 'Organic Search', organic_shopping: 'Organic Shopping',
   organic_social: 'Organic Social', referral: 'Referral', direct: 'Direct',
+}
+
+function formatMetaVal(key: string, val: unknown): string {
+  if (val === null || val === undefined) return '—'
+  if (key === 'total' || key === 'amount') {
+    const n = Number(val)
+    return isNaN(n) ? String(val) : n.toFixed(2)
+  }
+  return String(val)
 }
 
 function tlEventLabel(type: string): string {
@@ -374,5 +390,9 @@ function channelClass(ch: string) {
 .tl-url  { font-size: .82rem; color: var(--text); text-decoration: none; word-break: break-all; display: block; }
 .tl-url:hover { color: var(--accent); }
 .tl-ref  { font-size: .73rem; color: var(--soft); margin-top: .2rem; word-break: break-all; }
+.tl-meta { display: flex; flex-wrap: wrap; gap: .3rem .6rem; margin-top: .25rem; }
+.tl-meta-item { display: flex; gap: .25rem; align-items: baseline; font-size: .72rem; }
+.tl-meta-key { color: var(--soft); text-transform: lowercase; }
+.tl-meta-val { font-weight: 600; color: var(--text); font-family: monospace; font-size: .75rem; }
 .tl-empty { color: var(--soft); font-size: .85rem; padding: .5rem 0; }
 </style>
