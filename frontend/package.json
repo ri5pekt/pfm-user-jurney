@@ -10,6 +10,7 @@
   "dependencies": {
     "@types/cytoscape": "^3.31.0",
     "@types/d3-sankey": "^0.12.5",
+    "@vuepic/vue-datepicker": "^12.1.0",
     "axios": "^1.7.2",
     "cytoscape": "^3.33.4",
     "cytoscape-dagre": "^3.0.0",

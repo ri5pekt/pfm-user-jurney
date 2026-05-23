@@ -23,22 +23,21 @@
           <option value="custom">Custom range…</option>
         </select>
 
-        <!-- Custom range inputs (shown only when preset = custom) -->
-        <template v-if="preset === 'custom'">
-          <input
-            v-model="customStart"
-            type="datetime-local"
-            class="ctrl-dt"
-            @change="load"
-          />
-          <span class="range-arrow">→</span>
-          <input
-            v-model="customEnd"
-            type="datetime-local"
-            class="ctrl-dt"
-            @change="load"
-          />
-        </template>
+        <!-- Custom range picker (shown only when preset = custom) -->
+        <VueDatePicker
+          v-if="preset === 'custom'"
+          v-model="customRange"
+          range
+          :enable-time-picker="true"
+          :time-picker-inline="false"
+          :minutes-increment="15"
+          format="MM/dd/yyyy HH:mm"
+          :dark="false"
+          auto-apply
+          :close-on-auto-apply="true"
+          class="ctrl-dp"
+          @update:model-value="onRangeSelect"
+        />
 
         <button class="btn-reload" @click="load" :disabled="loading">↺</button>
       </div>
@@ -96,6 +95,8 @@ import SummaryWidget   from './overview/SummaryWidget.vue'
 import FunnelWidget    from './overview/FunnelWidget.vue'
 import BarChartWidget  from './overview/BarChartWidget.vue'
 import CountriesWidget from './overview/CountriesWidget.vue'
+import { VueDatePicker } from '@vuepic/vue-datepicker'
+import '@vuepic/vue-datepicker/dist/main.css'
 
 /* ── state ──────────────────────────────────────────────── */
 type Preset = '1h' | 'today' | 'yesterday' | 'custom'
@@ -103,8 +104,8 @@ type Preset = '1h' | 'today' | 'yesterday' | 'custom'
 const loading     = ref(false)
 const refreshing  = ref(false)   // silent background refresh
 const preset      = ref<Preset>('today')
-const customStart = ref(todayAt('00:00'))
-const customEnd   = ref(nowDT())
+// customRange holds [startDate, endDate] for the date picker
+const customRange = ref<[Date, Date]>([startOfToday(), new Date()])
 const data        = ref<FunnelData | null>(null)
 const lastUpdated = ref<Date | null>(null)
 let   liveTimer   = 0
@@ -114,14 +115,8 @@ const LIVE_INTERVAL_MS = 30_000  // refresh every 30 s
 const isLive = computed(() => preset.value === '1h' || preset.value === 'today')
 
 /* ── helpers ────────────────────────────────────────────── */
-function toDT(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-function nowDT()             { return toDT(new Date()) }
-function todayAt(hm: string) {
-  const d = new Date(); const [h, m] = hm.split(':').map(Number)
-  d.setHours(h, m, 0, 0); return toDT(d)
+function startOfToday(): Date {
+  const d = new Date(); d.setHours(0, 0, 0, 0); return d
 }
 
 function getRange(): { start: string; end: string } {
@@ -138,21 +133,19 @@ function getRange(): { start: string; end: string } {
     const e = new Date(s);   e.setHours(23, 59, 59, 999)
     return { start: s.toISOString(), end: e.toISOString() }
   }
-  return {
-    start: customStart.value ? new Date(customStart.value).toISOString() : '',
-    end:   customEnd.value   ? new Date(customEnd.value).toISOString()   : now.toISOString(),
-  }
+  // custom — use picker dates
+  const [s, e] = customRange.value
+  return { start: s?.toISOString() ?? '', end: e?.toISOString() ?? now.toISOString() }
 }
 
 const rangeLabel = computed(() => {
-  const fmt = (dt: string) =>
-    new Date(dt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fmt = (d: Date) =>
+    d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   if (preset.value === '1h')        return 'Last hour'
   if (preset.value === 'today')     return 'Today'
   if (preset.value === 'yesterday') return 'Yesterday'
-  const s = customStart.value ? fmt(new Date(customStart.value).toISOString()) : '?'
-  const e = customEnd.value   ? fmt(new Date(customEnd.value).toISOString())   : '?'
-  return `${s} → ${e}`
+  const [s, e] = customRange.value
+  return s && e ? `${fmt(s)} → ${fmt(e)}` : 'Custom range'
 })
 
 const updatedLabel = computed(() => {
@@ -194,11 +187,15 @@ function silentRefresh() { fetchData(true)  }
 function onPresetChange() {
   stopLive()
   if (preset.value === 'custom') {
-    customStart.value = todayAt('00:00')
-    customEnd.value   = nowDT()
+    customRange.value = [startOfToday(), new Date()]
   } else {
     fetchData(false).then(() => startLive())
   }
+}
+
+function onRangeSelect(range: [Date, Date]) {
+  customRange.value = range
+  if (range[0] && range[1]) fetchData(false)
 }
 
 /* ── lifecycle ──────────────────────────────────────────── */
@@ -247,16 +244,29 @@ onUnmounted(()    => { stopLive() })
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 6px; color: var(--text); font-size: 0.8rem; cursor: pointer;
 }
-.ctrl-dt {
-  padding: 0.26rem 0.4rem;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text); font-size: 0.78rem; cursor: pointer;
-  /* keep it compact — browser adds its own picker icon */
-  width: 162px;
+.ctrl-dp {
+  width: 230px;
+  font-size: 0.78rem;
 }
-.ctrl-dt:focus { outline: none; border-color: var(--accent); }
-
-.range-arrow { font-size: 0.8rem; color: var(--soft); }
+/* Slim down the vuedatepicker input to match our toolbar style */
+.ctrl-dp :deep(.dp__input) {
+  padding: 0.28rem 0.5rem 0.28rem 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.78rem;
+  height: auto;
+  min-height: unset;
+}
+.ctrl-dp :deep(.dp__input:focus) {
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.ctrl-dp :deep(.dp__input_icon) {
+  width: 1.1rem;
+  color: var(--soft);
+}
 
 .btn-reload {
   padding: 0.28rem 0.6rem;
