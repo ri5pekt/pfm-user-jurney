@@ -89,10 +89,10 @@
             <span class="attr-label">Location</span>
             <span class="attr-value location-cell">
               <img
-                :src="`/flags/${session.country}.png`"
+                v-if="flagUrl(session.country)"
+                :src="flagUrl(session.country)"
                 :alt="session.country"
                 class="flag-img"
-                @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
               />
               <span>{{ [session.city, session.state_name, session.country].filter(Boolean).join(', ') }}</span>
             </span>
@@ -149,6 +149,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api'
+import { flagUrl } from '@/composables/useFlags'
 
 interface SessionDetail {
   session_id:   string

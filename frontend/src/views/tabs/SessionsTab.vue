@@ -116,10 +116,10 @@
             <td class="col-location">
               <span v-if="s.country" class="location-cell">
                 <img
-                  :src="`/flags/${s.country}.png`"
+                  v-if="flagUrl(s.country)"
+                  :src="flagUrl(s.country)"
                   :alt="s.country"
                   class="flag-img"
-                  @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
                 />
                 <span class="location-text">{{ s.city || s.state_name || s.country }}</span>
               </span>
@@ -150,6 +150,7 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
+import { flagUrl } from '@/composables/useFlags'
 
 interface Session {
   session_id:  string
