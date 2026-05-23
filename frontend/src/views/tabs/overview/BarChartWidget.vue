@@ -5,51 +5,139 @@
       <span class="widget-note">{{ items.length }} total · top {{ visible.length }} shown</span>
     </div>
 
-    <!-- Column headers (only when conversions shown) -->
-    <div class="col-headers" v-if="showConversions">
+    <!-- Column headers -->
+    <div class="col-headers" v-if="showConversions" :class="{ 'with-revenue': showRevenue }">
       <div class="bar-label" />
       <div class="bar-spacer" />
-      <div class="col-h">Sessions</div>
-      <div class="col-h c-green">Orders</div>
+
+      <button class="col-h" :class="{ active: sortBy === 'sessions' }" @click="sortBy = 'sessions'">
+        Sessions <span class="sort-arrow">{{ sortBy === 'sessions' ? '▼' : '' }}</span>
+      </button>
+
+      <button class="col-h c-green" :class="{ active: sortBy === 'orders' }" @click="sortBy = 'orders'">
+        Orders <span class="sort-arrow">{{ sortBy === 'orders' ? '▼' : '' }}</span>
+      </button>
+
+      <button class="col-h c-green" :class="{ active: sortBy === 'convRate' }" @click="sortBy = 'convRate'">
+        CVR <span class="sort-arrow">{{ sortBy === 'convRate' ? '▼' : '' }}</span>
+      </button>
+
+      <button v-if="showRevenue" class="col-h c-purple" :class="{ active: sortBy === 'revenue' }" @click="sortBy = 'revenue'">
+        Revenue <span class="sort-arrow">{{ sortBy === 'revenue' ? '▼' : '' }}</span>
+      </button>
     </div>
 
     <div class="bar-list">
-      <div class="bar-row" :class="{ 'with-conv': showConversions }" v-for="item in visible" :key="item.id">
+      <template v-for="item in visible" :key="item.id">
+        <!-- Parent row -->
+        <div
+          class="bar-row"
+          :class="{ 'with-conv': showConversions, 'with-revenue': showConversions && showRevenue }"
+        >
+          <!-- Label with expand toggle -->
+          <div class="bar-label">
+            <button
+              v-if="item.breakdown?.length"
+              class="expand-btn"
+              :class="{ open: expanded.has(item.id) }"
+              @click.stop="toggle(item.id)"
+              :title="expanded.has(item.id) ? 'Collapse campaigns' : 'Expand campaigns'"
+            >▶</button>
+            <span v-else class="expand-placeholder" />
+            <span class="label-text" :title="item.label">{{ item.label }}</span>
+          </div>
 
-        <!-- Label -->
-        <div class="bar-label" :title="item.label">{{ item.label }}</div>
+          <!-- Bar track -->
+          <div class="bar-track">
+            <div class="bar-fill" :class="barColorClass" :style="{ width: barWidth(item) + '%' }" />
+          </div>
 
-        <!-- Split bar: blue traffic, green conversion portion inside -->
-        <div class="bar-track">
-          <div class="bar-blue" :style="{ width: trafficWidth(item) + '%' }">
-            <div
-              v-if="showConversions && item.convRate"
-              class="bar-green"
-              :style="{ width: item.convRate + '%' }"
-            />
+          <!-- Sessions column -->
+          <div class="bar-stat" :class="{ 'col-active': sortBy === 'sessions' }">
+            {{ item.count.toLocaleString() }}
+            <span class="bar-pct">{{ item.pct }}%</span>
+          </div>
+
+          <!-- Orders column -->
+          <div class="bar-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'orders' }">
+            {{ (item.orders ?? 0).toLocaleString() }}
+          </div>
+
+          <!-- CVR column -->
+          <div class="bar-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'convRate' }">
+            <span class="bar-pct c-green-soft">{{ item.convRate ?? 0 }}%</span>
+          </div>
+
+          <!-- Revenue column -->
+          <div class="bar-stat c-purple" v-if="showConversions && showRevenue" :class="{ 'col-active': sortBy === 'revenue' }">
+            {{ fmtUsd(item.revenue ?? 0) }}
           </div>
         </div>
 
-        <!-- Traffic column -->
-        <div class="bar-stat">
-          {{ item.count.toLocaleString() }}
-          <span class="bar-pct">{{ item.pct }}%</span>
-        </div>
+        <!-- Campaign sub-rows -->
+        <template v-if="expanded.has(item.id) && item.breakdown?.length">
+          <div
+            class="bar-row sub-row"
+            :class="{ 'with-conv': showConversions, 'with-revenue': showConversions && showRevenue }"
+            v-for="sub in visibleBreakdown(item)"
+            :key="sub.label"
+          >
+            <div class="bar-label sub-label">
+              <span class="sub-icon">└</span>
+              <span class="label-text" :title="sub.label">{{ sub.label }}</span>
+            </div>
 
-        <!-- Conversions column -->
-        <div class="bar-stat c-green" v-if="showConversions">
-          {{ (item.orders ?? 0).toLocaleString() }}
-          <span class="bar-pct c-green-soft">{{ item.convRate ?? 0 }}%</span>
-        </div>
+            <div class="bar-track sub-track">
+              <div
+                class="bar-fill sub-fill"
+                :class="barColorClass"
+                :style="{ width: subBarWidth(sub, item) + '%', opacity: 0.65 }"
+              />
+            </div>
 
-      </div>
+            <div class="bar-stat sub-stat" :class="{ 'col-active': sortBy === 'sessions' }">
+              {{ sub.count.toLocaleString() }}
+              <span class="bar-pct">{{ sub.pct }}%</span>
+            </div>
+
+            <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'orders' }">
+              {{ sub.orders.toLocaleString() }}
+            </div>
+
+            <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'convRate' }">
+              <span class="bar-pct c-green-soft" v-if="sub.count">
+                {{ Math.round(sub.orders / sub.count * 1000) / 10 }}%
+              </span>
+            </div>
+
+            <div class="bar-stat sub-stat c-purple" v-if="showConversions && showRevenue" :class="{ 'col-active': sortBy === 'revenue' }">
+              {{ fmtUsd(sub.revenue) }}
+            </div>
+          </div>
+
+          <!-- Show all / collapse toggle -->
+          <div
+            v-if="item.breakdown.length > BREAKDOWN_DEFAULT"
+            class="show-more-row"
+          >
+            <button class="show-more-btn" @click="toggleShowAll(item.id)">
+              <template v-if="showAllBreakdown.has(item.id)">
+                ▲ Show top {{ BREAKDOWN_DEFAULT }}
+              </template>
+              <template v-else>
+                ▼ Show all {{ item.breakdown.length }} campaigns
+              </template>
+            </button>
+          </div>
+        </template>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { FunnelItem } from './types'
+import { ref, computed } from 'vue'
+import type { FunnelItem, BreakdownItem } from './types'
 
 const props = defineProps<{
   title:            string
@@ -57,81 +145,244 @@ const props = defineProps<{
   color:            string
   topN?:            number
   showConversions?: boolean
+  showRevenue?:     boolean
 }>()
 
-const topN     = computed(() => props.topN ?? 10)
-const visible  = computed(() => props.items.slice(0, topN.value))
-const maxCount = computed(() => Math.max(...props.items.map(i => i.count), 1))
+const BREAKDOWN_DEFAULT = 10  // campaigns shown before "show all" button
 
-function trafficWidth(item: FunnelItem) {
-  return (item.count / maxCount.value) * 100
+type SortKey = 'sessions' | 'orders' | 'convRate' | 'revenue'
+const sortBy   = ref<SortKey>('sessions')
+const expanded = ref<Set<string>>(new Set())
+const showAllBreakdown = ref<Set<string>>(new Set())
+
+function toggle(id: string) {
+  const s = new Set(expanded.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  expanded.value = s
+}
+
+function toggleShowAll(id: string) {
+  const s = new Set(showAllBreakdown.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  showAllBreakdown.value = s
+}
+
+function visibleBreakdown(item: FunnelItem) {
+  if (!item.breakdown) return []
+  const sorted = [...item.breakdown].sort((a, b) => {
+    if (sortBy.value === 'orders')   return b.orders  - a.orders
+    if (sortBy.value === 'revenue')  return b.revenue - a.revenue
+    if (sortBy.value === 'convRate') {
+      const ra = a.count ? a.orders / a.count : 0
+      const rb = b.count ? b.orders / b.count : 0
+      return rb - ra
+    }
+    return b.count - a.count
+  })
+  return showAllBreakdown.value.has(item.id) ? sorted : sorted.slice(0, BREAKDOWN_DEFAULT)
+}
+
+const topN = computed(() => props.topN ?? 10)
+
+const sorted = computed(() => {
+  const arr = [...props.items]
+  if (sortBy.value === 'orders')   return arr.sort((a, b) => (b.orders   ?? 0) - (a.orders   ?? 0))
+  if (sortBy.value === 'revenue')  return arr.sort((a, b) => (b.revenue  ?? 0) - (a.revenue  ?? 0))
+  if (sortBy.value === 'convRate') return arr.sort((a, b) => (b.convRate ?? 0) - (a.convRate ?? 0))
+  return arr.sort((a, b) => b.count - a.count)
+})
+
+const visible  = computed(() => sorted.value.slice(0, topN.value))
+
+const maxSessions = computed(() => Math.max(...props.items.map(i => i.count), 1))
+const maxOrders   = computed(() => Math.max(...props.items.map(i => i.orders   ?? 0), 1))
+const maxRevenue  = computed(() => Math.max(...props.items.map(i => i.revenue  ?? 0), 1))
+const maxConvRate = computed(() => Math.max(...props.items.map(i => i.convRate ?? 0), 1))
+
+function barWidth(item: FunnelItem): number {
+  if (sortBy.value === 'orders')   return ((item.orders   ?? 0) / maxOrders.value)   * 100
+  if (sortBy.value === 'revenue')  return ((item.revenue  ?? 0) / maxRevenue.value)  * 100
+  if (sortBy.value === 'convRate') return ((item.convRate ?? 0) / maxConvRate.value) * 100
+  return (item.count / maxSessions.value) * 100
+}
+
+function subBarWidth(sub: BreakdownItem, parent: FunnelItem): number {
+  if (sortBy.value === 'orders')  return parent.orders  ? (sub.orders  / parent.orders)  * 100 : 0
+  if (sortBy.value === 'revenue') return parent.revenue ? (sub.revenue / parent.revenue) * 100 : 0
+  return (sub.count / parent.count) * 100
+}
+
+const barColorClass = computed(() => {
+  if (sortBy.value === 'orders' || sortBy.value === 'convRate') return 'bar-fill-green'
+  if (sortBy.value === 'revenue') return 'bar-fill-purple'
+  return 'bar-fill-blue'
+})
+
+function fmtUsd(v: number): string {
+  if (v >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+  if (v >= 1_000)     return '$' + (v / 1_000).toFixed(1) + 'K'
+  return '$' + v.toFixed(0)
 }
 </script>
 
 <style scoped>
 .col-headers {
   display: grid;
-  grid-template-columns: 140px 1fr 72px 72px;
+  grid-template-columns: 210px 1fr 72px 72px 58px;
   gap: 0.6rem;
   padding: 0 0 0.35rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.4rem;
 }
+.col-headers.with-revenue {
+  grid-template-columns: 210px 1fr 72px 72px 58px 72px;
+}
+
 .bar-spacer { /* fills the bar column */ }
+
 .col-h {
   font-size: 0.65rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--soft); text-align: right;
+  background: none; border: none; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: .2rem;
+  transition: color .15s;
 }
-.col-h.c-green { color: #16a34a; }
+.col-h:hover  { color: var(--text); }
+.col-h.active { color: var(--text); }
+.col-h.c-green        { color: #6db68a; }
+.col-h.c-green.active { color: #15803d; }
+.col-h.c-purple        { color: #a78bcc; }
+.col-h.c-purple.active { color: #7c3aed; }
+
+.sort-arrow { font-size: .55rem; line-height: 1; opacity: .7; }
 
 /* ── bar list ──────────────────────────────────────────── */
-.bar-list { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.2rem 0; }
+.bar-list { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.2rem 0; }
 
 .bar-row {
   display: grid;
-  grid-template-columns: 140px 1fr 72px;
+  grid-template-columns: 210px 1fr 72px;
   align-items: center;
   gap: 0.6rem;
 }
-.bar-row.with-conv {
-  grid-template-columns: 140px 1fr 72px 72px;
+.bar-row.with-conv    { grid-template-columns: 210px 1fr 72px 72px 58px; }
+.bar-row.with-revenue { grid-template-columns: 210px 1fr 72px 72px 58px 72px; }
+
+/* ── label cell ───────────────────────────────────────── */
+.bar-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
-.bar-label {
+.label-text {
   font-size: 0.78rem; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; min-width: 0;
 }
 
-/* ── track + split bars ───────────────────────────────── */
+/* ── expand toggle ─────────────────────────────────────── */
+.expand-btn {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-size: 0.5rem; color: var(--soft);
+  border-radius: 3px;
+  transition: color .15s, background .15s, transform .2s ease;
+  transform: rotate(0deg);
+}
+.expand-btn:hover  { color: var(--text); background: rgba(0,0,0,0.06); }
+.expand-btn.open   { transform: rotate(90deg); color: var(--text); }
+
+.expand-placeholder {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  display: inline-block;
+}
+
+/* ── track + fill bars ───────────────────────────────── */
 .bar-track {
   height: 8px; border-radius: 4px;
   background: rgba(0,0,0,0.06);
   overflow: hidden;
 }
-.bar-blue {
+.bar-fill {
   height: 100%; border-radius: 4px;
-  background: v-bind(color);
-  transition: width 0.5s ease;
-  position: relative;
-  overflow: hidden;
+  transition: width 0.45s ease, background-color .3s ease;
 }
-.bar-green {
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  background: #22c55e;
-  border-radius: 4px;
-  transition: width 0.5s ease;
-}
+.bar-fill-blue   { background: v-bind(color); }
+.bar-fill-green  { background: #22c55e; }
+.bar-fill-purple { background: #8b5cf6; }
+
 
 /* ── stat columns ─────────────────────────────────────── */
 .bar-stat {
   font-size: 0.75rem; color: var(--soft);
   text-align: right; white-space: nowrap;
+  transition: color .2s;
 }
+.bar-stat.col-active { color: var(--text); font-weight: 600; }
 .bar-pct {
   font-weight: 700; color: var(--text); margin-left: 0.25rem;
 }
 .c-green      { color: #15803d; }
 .c-green-soft { color: #16a34a; }
+.c-purple     { color: #7c3aed; }
+
+/* ── sub-rows ─────────────────────────────────────────── */
+.sub-row {
+  margin-top: -0.1rem;
+  margin-bottom: 0.05rem;
+}
+
+/* ── show more button ─────────────────────────────────── */
+.show-more-row {
+  padding-left: 20px;
+  margin-top: 0.1rem;
+  margin-bottom: 0.2rem;
+}
+.show-more-btn {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-size: 0.67rem; color: var(--soft);
+  transition: color .15s;
+}
+.show-more-btn:hover { color: var(--text); }
+
+.sub-label {
+  padding-left: 2px;
+}
+.sub-icon {
+  flex-shrink: 0;
+  width: 16px;
+  font-size: 0.65rem;
+  color: var(--soft);
+  opacity: 0.5;
+  text-align: center;
+}
+
+.sub-track {
+  height: 5px;
+  background: rgba(0,0,0,0.04);
+}
+
+.sub-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.sub-stat {
+  font-size: 0.7rem;
+  color: var(--soft);
+}
+.sub-stat .bar-pct {
+  font-weight: 600;
+  color: var(--soft);
+  font-size: 0.65rem;
+}
 </style>

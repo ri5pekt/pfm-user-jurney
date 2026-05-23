@@ -3,8 +3,13 @@ import { pgPool } from '../lib/postgres';
 
 export const funnelsRouter = Router();
 
-type StepType  = 'page_view' | 'custom_event';
-type UrlMatch  = 'contains' | 'equals' | 'starts_with';
+type StepType       = 'page_view' | 'custom_event';
+type UrlMatch       = 'contains' | 'equals' | 'starts_with';
+type FilterField    = 'country' | 'channel' | 'source' | 'entry_url' | 'referrer';
+type FilterOperator = 'is_any' | 'contains' | 'equals' | 'starts_with' | 'is_set' | 'is_not_set';
+
+const ALLOWED_FILTER_FIELDS: FilterField[] = ['country', 'channel', 'source', 'entry_url', 'referrer'];
+const ALLOWED_VALUE_FIELDS  = ['country', 'channel', 'source', 'utm_campaign', 'utm_medium'];
 
 interface FunnelStep {
   type:        StepType;
@@ -15,15 +20,31 @@ interface FunnelStep {
 }
 
 interface FunnelFilter {
-  field: 'country' | 'channel' | 'source';
-  value: string;
+  field:    FilterField;
+  operator: FilterOperator;
+  values:   string[];
 }
 
 interface FunnelRequest {
-  steps:   FunnelStep[];
+  steps:    FunnelStep[];
   filters?: FunnelFilter[];
-  start?:  string;
-  end?:    string;
+  compare?: FunnelFilter[];
+  start?:   string;
+  end?:     string;
+}
+
+interface StepResult {
+  label:     string;
+  count:     number;
+  pct_prev:  number;
+  pct_total: number;
+  drop_off:  number;
+}
+
+interface FunnelResult {
+  total:               number;
+  overall_conversion:  number;
+  steps:               StepResult[];
 }
 
 interface RawEvent {
@@ -33,14 +54,16 @@ interface RawEvent {
   ts:         number;
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
 function matchesStep(ev: RawEvent, step: FunnelStep): boolean {
   if (step.type === 'page_view') {
     if (ev.event_type !== 'page_view') return false;
     const val = (step.url_value ?? '').trim().toLowerCase();
     if (!val) return true;
-    let pathname = ev.page_url.toLowerCase();
-    try { pathname = new URL(ev.page_url).pathname.toLowerCase(); } catch { /* keep raw */ }
     const full = ev.page_url.toLowerCase();
+    let pathname = full;
+    try { pathname = new URL(ev.page_url).pathname.toLowerCase(); } catch { /* keep raw */ }
     switch (step.url_match ?? 'contains') {
       case 'contains':    return full.includes(val) || pathname.includes(val);
       case 'equals':      return pathname === val || full === val;
@@ -54,7 +77,103 @@ function matchesStep(ev: RawEvent, step: FunnelStep): boolean {
   return false;
 }
 
-// GET /funnels/event-types — distinct custom event types for the step picker
+/**
+ * Builds the extra WHERE clauses (beyond date range) from a filter array.
+ * params are appended to the provided array; SQL placeholders start at startIdx.
+ */
+function applyFilters(
+  filters: FunnelFilter[],
+  conds: string[],
+  params: unknown[],
+): void {
+  for (const f of filters) {
+    if (!ALLOWED_FILTER_FIELDS.includes(f.field)) continue;
+    const col = f.field;   // already validated — safe to interpolate
+
+    switch (f.operator) {
+      case 'is_any':
+        if (f.values.length > 0) {
+          conds.push(`${col} = ANY($${params.push(f.values)})`);
+        }
+        break;
+      case 'contains':
+        if (f.values[0]) {
+          conds.push(`${col} ILIKE $${params.push('%' + f.values[0] + '%')}`);
+        }
+        break;
+      case 'equals':
+        if (f.values[0]) {
+          conds.push(`${col} = $${params.push(f.values[0])}`);
+        }
+        break;
+      case 'starts_with':
+        if (f.values[0]) {
+          conds.push(`${col} ILIKE $${params.push(f.values[0] + '%')}`);
+        }
+        break;
+      case 'is_set':
+        conds.push(`(${col} IS NOT NULL AND ${col} <> '')`);
+        break;
+      case 'is_not_set':
+        conds.push(`(${col} IS NULL OR ${col} = '')`);
+        break;
+    }
+  }
+}
+
+async function fetchSessionIds(
+  start: string | undefined,
+  end:   string | undefined,
+  filters: FunnelFilter[],
+): Promise<string[]> {
+  const conds: string[]  = [];
+  const params: unknown[] = [];
+  if (start) conds.push(`first_seen >= $${params.push(start)}`);
+  if (end)   conds.push(`first_seen <= $${params.push(end)}`);
+  applyFilters(filters, conds, params);
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+  const r = await pgPool.query<{ session_id: string }>(
+    `SELECT session_id FROM sessions ${where} ORDER BY first_seen DESC LIMIT 100000`,
+    params,
+  );
+  return r.rows.map(r => r.session_id);
+}
+
+function computeResult(steps: FunnelStep[], sessionIds: string[], bySession: Map<string, RawEvent[]>): FunnelResult {
+  const counts = new Array<number>(steps.length).fill(0);
+
+  for (const sid of sessionIds) {
+    const events = bySession.get(sid);
+    if (!events || events.length === 0) continue;
+    let afterTs = -Infinity;
+    for (let si = 0; si < steps.length; si++) {
+      const match = events.find(ev => ev.ts >= afterTs && matchesStep(ev, steps[si]));
+      if (!match) break;
+      counts[si]++;
+      afterTs = match.ts + 1;
+    }
+  }
+
+  const total = counts[0] ?? 0;
+  const last  = counts[counts.length - 1] ?? 0;
+  const pct   = (n: number, d: number) => d > 0 ? Math.round(n / d * 10000) / 100 : 0;
+
+  return {
+    total,
+    overall_conversion: pct(last, total),
+    steps: steps.map((s, i) => ({
+      label:     s.label,
+      count:     counts[i],
+      pct_prev:  i === 0 ? 100 : pct(counts[i], counts[i - 1]),
+      pct_total: pct(counts[i], total),
+      drop_off:  i === 0 ? 0 : (counts[i - 1] - counts[i]),
+    })),
+  };
+}
+
+// ─── routes ─────────────────────────────────────────────────────────────────
+
+// GET /funnels/event-types
 funnelsRouter.get('/event-types', async (_req: Request, res: Response): Promise<void> => {
   const result = await pgPool.query<{ event_type: string; count: string }>(
     `SELECT event_type, COUNT(*) AS count
@@ -67,11 +186,28 @@ funnelsRouter.get('/event-types', async (_req: Request, res: Response): Promise<
   res.json(result.rows);
 });
 
+// GET /funnels/filter-values?field=country
+funnelsRouter.get('/filter-values', async (req: Request, res: Response): Promise<void> => {
+  const field = req.query.field as string;
+  if (!ALLOWED_VALUE_FIELDS.includes(field)) {
+    res.status(400).json({ error: 'Invalid field' }); return;
+  }
+  const r = await pgPool.query<{ value: string; count: string }>(
+    `SELECT ${field} AS value, COUNT(*) AS count
+     FROM   sessions
+     WHERE  ${field} IS NOT NULL AND ${field} <> ''
+     GROUP  BY ${field}
+     ORDER  BY count DESC
+     LIMIT  150`,
+  );
+  res.json(r.rows);
+});
+
 // POST /funnels/compute
 funnelsRouter.post('/compute', async (req: Request, res: Response): Promise<void> => {
   try {
     const body: FunnelRequest = req.body;
-    const { steps, filters = [], start, end } = body;
+    const { steps, filters = [], compare, start, end } = body;
 
     if (!Array.isArray(steps) || steps.length < 2) {
       res.status(400).json({ error: 'At least 2 steps required' }); return;
@@ -80,43 +216,30 @@ funnelsRouter.post('/compute', async (req: Request, res: Response): Promise<void
       res.status(400).json({ error: 'Maximum 8 steps' }); return;
     }
 
-    // Build sessions WHERE
-    const conds: string[]  = [];
-    const vals: unknown[]  = [];
-    if (start) conds.push(`first_seen >= $${vals.push(start)}`);
-    if (end)   conds.push(`first_seen <= $${vals.push(end)}`);
-    for (const f of filters) {
-      if (['country', 'channel', 'source'].includes(f.field) && f.value) {
-        conds.push(`${f.field} = $${vals.push(f.value)}`);
-      }
-    }
-    const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+    // Fetch sessions for primary segment
+    const primaryIds = await fetchSessionIds(start, end, filters);
 
-    const sessRes = await pgPool.query<{ session_id: string }>(
-      `SELECT session_id FROM sessions ${where} ORDER BY first_seen DESC LIMIT 100000`,
-      vals,
-    );
-    const sessionIds = sessRes.rows.map(r => r.session_id);
-
-    if (sessionIds.length === 0) {
-      res.json({
-        total: 0,
-        overall_conversion: 0,
+    if (primaryIds.length === 0) {
+      const empty = {
+        total: 0, overall_conversion: 0,
         steps: steps.map(s => ({ label: s.label, count: 0, pct_prev: 0, pct_total: 0, drop_off: 0 })),
-      });
-      return;
+      };
+      res.json({ primary: empty }); return;
     }
 
-    // Load events
+    // Load all events for primary sessions
+    const allIds = compare
+      ? [...new Set([...primaryIds, ...(await fetchSessionIds(start, end, compare ?? []))])]
+      : primaryIds;
+
     const evRes = await pgPool.query<{ session_id: string; event_type: string; page_url: string; timestamp: string }>(
       `SELECT session_id, event_type, page_url, timestamp
        FROM   events
        WHERE  session_id = ANY($1)
        ORDER  BY session_id, timestamp ASC`,
-      [sessionIds],
+      [allIds],
     );
 
-    // Group by session
     const bySession = new Map<string, RawEvent[]>();
     for (const ev of evRes.rows) {
       if (!bySession.has(ev.session_id)) bySession.set(ev.session_id, []);
@@ -128,39 +251,17 @@ funnelsRouter.post('/compute', async (req: Request, res: Response): Promise<void
       });
     }
 
-    // Walk each session through steps in order
-    const counts = new Array<number>(steps.length).fill(0);
+    const primary = computeResult(steps, primaryIds, bySession);
 
-    for (const sid of sessionIds) {
-      const events = bySession.get(sid);
-      if (!events || events.length === 0) continue;
-
-      let afterTs = -Infinity;
-      let ok = true;
-      for (let si = 0; si < steps.length; si++) {
-        const match = events.find(ev => ev.ts >= afterTs && matchesStep(ev, steps[si]));
-        if (!match) { ok = false; break; }
-        counts[si]++;
-        afterTs = match.ts + 1; // next step must come strictly after
-      }
-      void ok;
+    if (!compare || compare.length === 0) {
+      res.json({ primary }); return;
     }
 
-    const total = counts[0] ?? 0;
-    const last  = counts[counts.length - 1] ?? 0;
-    const overall_conversion = total > 0 ? Math.round(last / total * 1000) / 10 : 0;
+    // Fetch compare segment session IDs (may overlap with primary — that's fine)
+    const compareIds = await fetchSessionIds(start, end, compare);
+    const compareResult = computeResult(steps, compareIds, bySession);
 
-    res.json({
-      total,
-      overall_conversion,
-      steps: steps.map((s, i) => ({
-        label:      s.label,
-        count:      counts[i],
-        pct_prev:   i === 0 ? 100 : (counts[i - 1] > 0 ? Math.round(counts[i] / counts[i - 1] * 1000) / 10 : 0),
-        pct_total:  total > 0 ? Math.round(counts[i] / total * 1000) / 10 : 0,
-        drop_off:   i === 0 ? 0 : (counts[i - 1] - counts[i]),
-      })),
-    });
+    res.json({ primary, compare: compareResult });
   } catch (err) {
     console.error('[admin-api] /funnels/compute error:', err);
     res.status(500).json({ error: 'Internal server error' });

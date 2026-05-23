@@ -15,6 +15,12 @@
       </div>
       <div class="toolbar-right">
 
+        <!-- Timezone selector -->
+        <select v-model="tzId" class="ctrl-select ctrl-tz" @change="onTzChange">
+          <option value="IL">🕐 IL</option>
+          <option value="NY">🗽 NY</option>
+        </select>
+
         <!-- Preset dropdown -->
         <select v-model="preset" class="ctrl-select" @change="onPresetChange">
           <option value="1h">Last hour</option>
@@ -32,6 +38,7 @@
           :time-picker-inline="false"
           :minutes-increment="15"
           format="MM/dd/yyyy HH:mm"
+          :timezone="currentZone"
           :dark="false"
           auto-apply
           :close-on-auto-apply="true"
@@ -60,6 +67,7 @@
         color="#3b82f6"
         :top-n="20"
         :show-conversions="true"
+        :show-revenue="true"
       />
 
       <BarChartWidget
@@ -98,14 +106,48 @@ import CountriesWidget from './overview/CountriesWidget.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 
+/* ── timezone ───────────────────────────────────────────── */
+type TzKey = 'IL' | 'NY'
+const ZONES: Record<TzKey, { label: string; iana: string }> = {
+  IL: { label: 'IL',       iana: 'Asia/Jerusalem'    },
+  NY: { label: 'EDT (NY)', iana: 'America/New_York'  },
+}
+const tzId        = ref<TzKey>('IL')
+const currentZone = computed(() => ZONES[tzId.value].iana)
+
+// UTC offset for a given IANA zone at a given moment (ms)
+function tzOffsetMs(zone: string, at: Date = new Date()): number {
+  const fmt = (z: string) =>
+    at.toLocaleString('en-US', {
+      timeZone: z, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    })
+  return Date.parse(fmt(zone)) - Date.parse(fmt('UTC'))
+}
+
+// Midnight of today (or today+dayOffset) in the given timezone, returned as UTC Date
+function startOfDayInZone(zone: string, dayOffset = 0): Date {
+  const now  = new Date()
+  const off  = tzOffsetMs(zone, now)
+  const fake = new Date(now.getTime() + off)   // "now" expressed as fake-UTC in target zone
+  fake.setUTCHours(0, 0, 0, 0)
+  if (dayOffset) fake.setUTCDate(fake.getUTCDate() + dayOffset)
+  return new Date(fake.getTime() - off)         // convert back to real UTC
+}
+
+// End of day (23:59:59.999) in the given timezone
+function endOfDayInZone(zone: string, dayOffset = 0): Date {
+  const start = startOfDayInZone(zone, dayOffset)
+  return new Date(start.getTime() + 86_400_000 - 1)
+}
+
 /* ── state ──────────────────────────────────────────────── */
 type Preset = '1h' | 'today' | 'yesterday' | 'custom'
 
 const loading     = ref(false)
 const refreshing  = ref(false)   // silent background refresh
 const preset      = ref<Preset>('today')
-// customRange holds [startDate, endDate] for the date picker
-const customRange = ref<[Date, Date]>([startOfToday(), new Date()])
+const customRange = ref<[Date, Date]>([startOfDayInZone(currentZone.value), new Date()])
 const data        = ref<FunnelData | null>(null)
 const lastUpdated = ref<Date | null>(null)
 let   liveTimer   = 0
@@ -115,42 +157,46 @@ const LIVE_INTERVAL_MS = 30_000  // refresh every 30 s
 const isLive = computed(() => preset.value === '1h' || preset.value === 'today')
 
 /* ── helpers ────────────────────────────────────────────── */
-function startOfToday(): Date {
-  const d = new Date(); d.setHours(0, 0, 0, 0); return d
-}
-
 function getRange(): { start: string; end: string } {
-  const now = new Date()
+  const now  = new Date()
+  const zone = currentZone.value
   if (preset.value === '1h') {
     return { start: new Date(now.getTime() - 3_600_000).toISOString(), end: now.toISOString() }
   }
   if (preset.value === 'today') {
-    const s = new Date(now); s.setHours(0, 0, 0, 0)
-    return { start: s.toISOString(), end: now.toISOString() }
+    return { start: startOfDayInZone(zone).toISOString(), end: now.toISOString() }
   }
   if (preset.value === 'yesterday') {
-    const s = new Date(now); s.setDate(s.getDate() - 1); s.setHours(0, 0, 0, 0)
-    const e = new Date(s);   e.setHours(23, 59, 59, 999)
-    return { start: s.toISOString(), end: e.toISOString() }
+    return { start: startOfDayInZone(zone, -1).toISOString(), end: endOfDayInZone(zone, -1).toISOString() }
   }
-  // custom — use picker dates
+  // custom — use picker dates as-is
   const [s, e] = customRange.value
   return { start: s?.toISOString() ?? '', end: e?.toISOString() ?? now.toISOString() }
 }
 
+function fmtInZone(d: Date): string {
+  return d.toLocaleString('en-US', {
+    timeZone: currentZone.value,
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+const tzSuffix = computed(() => tzId.value === 'IL' ? '' : ` · ${ZONES[tzId.value].label}`)
+
 const rangeLabel = computed(() => {
-  const fmt = (d: Date) =>
-    d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  if (preset.value === '1h')        return 'Last hour'
-  if (preset.value === 'today')     return 'Today'
-  if (preset.value === 'yesterday') return 'Yesterday'
+  if (preset.value === '1h')        return `Last hour${tzSuffix.value}`
+  if (preset.value === 'today')     return `Today${tzSuffix.value}`
+  if (preset.value === 'yesterday') return `Yesterday${tzSuffix.value}`
   const [s, e] = customRange.value
-  return s && e ? `${fmt(s)} → ${fmt(e)}` : 'Custom range'
+  return s && e ? `${fmtInZone(s)} → ${fmtInZone(e)}` : 'Custom range'
 })
 
 const updatedLabel = computed(() => {
   if (!lastUpdated.value) return ''
-  return lastUpdated.value.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return lastUpdated.value.toLocaleTimeString('en-US', {
+    timeZone: currentZone.value,
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
 })
 
 /* ── live polling ───────────────────────────────────────── */
@@ -183,14 +229,22 @@ async function fetchData(silent = false) {
 function load()          { fetchData(false) }
 function silentRefresh() { fetchData(true)  }
 
-/* ── preset change ──────────────────────────────────────── */
+/* ── preset / timezone change ───────────────────────────── */
 function onPresetChange() {
   stopLive()
   if (preset.value === 'custom') {
-    customRange.value = [startOfToday(), new Date()]
+    customRange.value = [startOfDayInZone(currentZone.value), new Date()]
   } else {
     fetchData(false).then(() => startLive())
   }
+}
+
+function onTzChange() {
+  // Reset custom range start to today in the newly selected zone
+  if (preset.value === 'custom') {
+    customRange.value = [startOfDayInZone(currentZone.value), new Date()]
+  }
+  fetchData(false).then(() => startLive())
 }
 
 function onRangeSelect(range: [Date, Date]) {
@@ -243,6 +297,11 @@ onUnmounted(()    => { stopLive() })
   padding: 0.28rem 0.45rem;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 6px; color: var(--text); font-size: 0.8rem; cursor: pointer;
+}
+.ctrl-tz {
+  font-size: 0.75rem;
+  border-style: dashed;
+  color: var(--soft);
 }
 .ctrl-dp {
   width: 310px;

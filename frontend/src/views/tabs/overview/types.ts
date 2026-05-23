@@ -1,3 +1,11 @@
+export interface BreakdownItem {
+  label:   string
+  count:   number
+  orders:  number
+  revenue: number
+  pct:     number  // % of parent source sessions
+}
+
 export interface FunnelItem {
   id: string
   label: string
@@ -6,6 +14,8 @@ export interface FunnelItem {
   pct: number
   orders?: number
   convRate?: number
+  revenue?: number
+  breakdown?: BreakdownItem[]
 }
 
 export interface SimpleNode {

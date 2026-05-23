@@ -10,19 +10,27 @@ export interface Attribution {
 }
 
 const PLACEMENT_LABELS: Record<string, string> = {
-  Facebook_Mobile_Feed:     'Facebook Feed',
-  Facebook_Desktop_Feed:    'Facebook Feed',
-  Facebook_Mobile_Reels:    'Facebook Reels',
-  Facebook_Notification:    'Facebook Notification',
-  Facebook_Marketplace:     'Facebook Marketplace',
-  Facebook_Instream_Video:  'Facebook Video',
-  Instagram_Reels:          'Instagram Reels',
-  Instagram_Stories:        'Instagram Stories',
-  Instagram_Feed:           'Instagram Feed',
-  Threads_Feed:             'Threads',
-  an:                       'Audience Network',
-  Others:                   'Meta Other',
-  others:                   'Meta Other',
+  Facebook_Mobile_Feed:        'Facebook Feed',
+  Facebook_Desktop_Feed:       'Facebook Feed',
+  Facebook_Mobile_Reels:       'Facebook Reels',
+  Facebook_Reels:              'Facebook Reels',
+  Facebook_Stories:            'Facebook Stories',
+  Facebook_Mobile_Stories:     'Facebook Stories',
+  Facebook_Desktop_Stories:    'Facebook Stories',
+  Facebook_Notification:       'Facebook Notification',
+  Facebook_Marketplace:        'Facebook Marketplace',
+  Facebook_Instream_Video:     'Facebook Video',
+  Facebook_Mobile_Instream:    'Facebook Video',
+  Instagram_Reels:             'Instagram Reels',
+  Instagram_Stories:           'Instagram Stories',
+  Instagram_Feed:              'Instagram Feed',
+  Threads_Feed:                'Threads',
+  an:                          'Audience Network',
+  Others:                      'Meta Other',
+  others:                      'Meta Other',
+  // Unresolved Facebook dynamic macros — treat as unknown
+  placement:                   '',
+  '{{placement}}':             '',
 };
 
 // Domains that are email relay / proxy services — referrer means the user came from email
@@ -197,6 +205,11 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Klaviyo';
     attr.medium  = params.get('utm_medium')?.toLowerCase() === 'sms' ? 'sms' : 'email';
     attr.channel = attr.medium === 'sms' ? 'sms' : 'email';
+    // mtke links are transactional (order confirmation, account, etc.) — label the campaign
+    // when no utm_campaign is already present in the URL
+    if (params.has('mtke') && !attr.utm_campaign) {
+      attr.utm_campaign = 'Transactional';
+    }
     return attr;
   }
 
@@ -232,6 +245,14 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     return attr;
   }
 
+  // ── 10b. TikTok click ID (ttclid) ───────────────────────────────────
+  if (params.has('ttclid')) {
+    attr.source  = 'TikTok';
+    attr.medium  = 'paid_social';
+    attr.channel = 'paid_social';
+    return attr;
+  }
+
   // ── 11. Facebook Click ID (fbclid) — Meta paid without nbt ─────────
   if (params.has('fbclid')) {
     attr.source    = 'Facebook';
@@ -250,6 +271,37 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Facebook';
     attr.medium  = 'paid_social';
     attr.channel = 'paid_social';
+    return attr;
+  }
+
+  // ── 11c. Atwave click ID (utm_clickid) ──────────────────────────────
+  // Atwave uses utm_clickid as their proprietary click tracking parameter.
+  if (params.has('utm_clickid')) {
+    attr.source  = 'Atwave';
+    attr.medium  = params.get('utm_medium') || 'paid';
+    attr.channel = 'paid_other';
+    return attr;
+  }
+
+  // NOTE: utm_id is a generic GA4 "Campaign ID" parameter, NOT Facebook-specific.
+  // Any platform (Meta, Atwave, Google, etc.) can set utm_id. We do NOT infer
+  // the source from utm_id alone to avoid false positives.
+
+  // ── 11e. Klaviyo SMS — sref_id click tracking ────────────────────────
+  // Klaviyo SMS links often use sref_id as the click-tracking param with
+  // utm_medium=sms but no utm_source.
+  if (params.has('sref_id') && attr.utm_medium.toLowerCase() === 'sms') {
+    attr.source  = 'Klaviyo';
+    attr.medium  = 'sms';
+    attr.channel = 'sms';
+    return attr;
+  }
+
+  // ── 11f. Checkmate (checkout coupon / cart-saver platform) ──────────
+  if (params.has('cm_click_id') || params.has('utm_cm_click_id')) {
+    attr.source  = 'Checkmate';
+    attr.medium  = 'referral';
+    attr.channel = 'referral';
     return attr;
   }
 
@@ -335,10 +387,47 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.channel = 'paid_other';
       return attr;
     }
-    // Klaviyo flows/campaigns with utm_source names (no nb_klid)
+    // TikTok (utm_source=tiktok without ttclid)
+    if (src === 'tiktok') {
+      attr.source  = 'TikTok';
+      attr.medium  = 'paid_social';
+      attr.channel = 'paid_social';
+      return attr;
+    }
+    // Flyover newsletter variants (flyover_section, flyover_podcast, etc.) → "Flyover"
+    if (src.startsWith('flyover')) {
+      attr.source  = 'Flyover';
+      attr.medium  = attr.utm_medium || 'paid';
+      attr.channel = 'paid_other';
+      return attr;
+    }
+    // Gentleman Today (gentlemantoday_article, gentlemantoday.co, etc.) → "Gentleman Today"
+    if (src.startsWith('gentlemantoday')) {
+      attr.source  = 'Gentleman Today';
+      attr.medium  = attr.utm_medium || 'referral';
+      attr.channel = attr.utm_medium === 'paid' ? 'paid_other' : 'referral';
+      return attr;
+    }
+    // LiveIntent (email newsletter ad network)
+    if (src === 'liveintent') {
+      attr.source  = 'LiveIntent';
+      attr.medium  = 'email';
+      attr.channel = 'email';
+      return attr;
+    }
+    // Email / SMS traffic — utm_source may be a platform name OR a coupon/campaign name.
+    // Only keep utm_source if it looks like an actual email platform; otherwise default to Klaviyo.
     if (med === 'email' || med === 'sms') {
-      // Keep utm_source as the platform name but normalise channel
-      attr.source  = attr.utm_source;
+      const KNOWN_EMAIL_PLATFORMS = [
+        'klaviyo', 'beehiiv', 'mailchimp', 'sendgrid', 'postmark', 'iterable',
+        'braze', 'omnisend', 'drip', 'activecampaign', 'hubspot', 'narvar',
+        'yotpo', 'wunderkind', 'attentive', 'recart', 'campaign', 'email', 'sms',
+      ];
+      const srcLower = attr.utm_source.toLowerCase().replace(/[\s_-]/g, '');
+      const isPlatform = KNOWN_EMAIL_PLATFORMS.some(p => srcLower.includes(p));
+      // A coupon/promo code typically contains digits (e.g. "memorial25", "save20")
+      const looksLikeCoupon = !isPlatform && /\d/.test(attr.utm_source);
+      attr.source  = (isPlatform && !looksLikeCoupon) ? attr.utm_source : 'Klaviyo';
       attr.medium  = med;
       attr.channel = med === 'sms' ? 'sms' : 'email';
       return attr;
@@ -401,6 +490,8 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else if (/\bmail\.google\b/.test(host))       { attr.source = 'Gmail';          attr.medium = 'email';    attr.channel = 'email';           }
       // Narvar (post-purchase shipping notification emails)
       else if (/\bnarvar\b/.test(host))             { attr.source = 'Narvar';         attr.medium = 'email';    attr.channel = 'email';           }
+      // Gentleman Today publication
+      else if (/\bgentlemantoday\b/.test(host))     { attr.source = 'Gentleman Today'; attr.medium = 'referral'; attr.channel = 'referral';       }
       // Microsoft Edge news / content recommendation
       else if (/\bedgepilot\b/.test(host))          { attr.source = 'Microsoft Edge'; attr.medium = 'referral'; attr.channel = 'referral';        }
       // Shopping browser extensions — don't indicate real traffic source

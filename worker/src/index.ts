@@ -103,8 +103,12 @@ async function drainBatch(): Promise<void> {
   }
 
   // ── Upsert sessions ──────────────────────────────────────────────
-  // Each event touches its session: first-ever INSERT sets attribution + geo,
-  // subsequent conflicts only update last_seen + page_count.
+  // First-ever INSERT sets attribution + geo.
+  // Subsequent events (ON CONFLICT) update timing and page count.
+  // Attribution upgrade: if the session was previously "direct" (or had no
+  // utm_campaign) and this event carries richer attribution, promote it.
+  // This handles cases where the landing page lost UTMs via a redirect but
+  // a subsequent page in the same session carries the original UTMs.
   for (const ev of deduped) {
     const attr       = parseAttribution(ev.page_url, ev.referrer || '');
     const geo        = geoCache.get(ev.ip) ?? null;
@@ -118,7 +122,26 @@ async function drainBatch(): Promise<void> {
        VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, $18::int, $13,$14,$15,$16,$17)
        ON CONFLICT (session_id) DO UPDATE
          SET last_seen  = GREATEST(sessions.last_seen, EXCLUDED.last_seen),
-             page_count = sessions.page_count + $18::int`,
+             page_count = sessions.page_count + $18::int,
+
+             -- Promote source/channel if session was previously unattributed (direct)
+             -- and this event carries a richer signal
+             source      = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
+                                THEN EXCLUDED.source      ELSE sessions.source      END,
+             medium      = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
+                                THEN EXCLUDED.medium      ELSE sessions.medium      END,
+             channel     = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
+                                THEN EXCLUDED.channel     ELSE sessions.channel     END,
+             utm_source  = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
+                                THEN EXCLUDED.utm_source  ELSE sessions.utm_source  END,
+             utm_medium  = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
+                                THEN EXCLUDED.utm_medium  ELSE sessions.utm_medium  END,
+
+             -- Promote utm_campaign independently: upgrade any session missing it
+             -- (regardless of source) if this event has one
+             utm_campaign = CASE WHEN (sessions.utm_campaign IS NULL OR sessions.utm_campaign = '')
+                                      AND EXCLUDED.utm_campaign <> ''
+                                 THEN EXCLUDED.utm_campaign ELSE sessions.utm_campaign END`,
       [
         ev.session_id,
         ev.timestamp || new Date().toISOString(),

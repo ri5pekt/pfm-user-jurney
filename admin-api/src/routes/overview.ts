@@ -81,8 +81,8 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       : "WHERE country IS NOT NULL AND country <> ''";
 
     const [sessionsRes, revenueRes, countriesRes] = await Promise.all([
-      pgPool.query<{ session_id: string; channel: string; source: string }>(
-        `SELECT session_id, channel, source FROM sessions ${where} ORDER BY first_seen DESC`,
+      pgPool.query<{ session_id: string; channel: string; source: string; revenue_usd: string | null; utm_campaign: string }>(
+        `SELECT session_id, channel, source, revenue_usd, utm_campaign FROM sessions ${where} ORDER BY first_seen DESC`,
         values,
       ),
       pgPool.query<{ total_revenue: string; aov: string; tracked_orders: string }>(
@@ -113,14 +113,33 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const sessionIds = sessionsRes.rows.map(r => r.session_id);
 
     // Count per source — group by source name only (ignore channel) to avoid duplicates
-    const sourceCount  = new Map<string, { label: string; count: number }>();
-    const sessionSrc   = new Map<string, string>(); // session_id → source key
+    const sourceCount    = new Map<string, { label: string; count: number }>();
+    const sourceRevenue  = new Map<string, number>(); // revenue_usd sum per source
+    const sessionSrc     = new Map<string, string>(); // session_id → source key
+    const sessionCampaign = new Map<string, string>(); // session_id → utm_campaign
+
+    // campaign breakdown maps: source → campaign → value
+    const campCount   = new Map<string, Map<string, number>>();
+    const campRevenue = new Map<string, Map<string, number>>();
+
     for (const s of sessionsRes.rows) {
-      const key   = s.source || 'direct';
-      const label = !s.source || s.source === 'direct' ? 'Direct' : s.source;
+      const key    = s.source || 'direct';
+      const label  = !s.source || s.source === 'direct' ? 'Direct' : s.source;
+      const camp   = (s.utm_campaign || '').trim();
       if (!sourceCount.has(key)) sourceCount.set(key, { label, count: 0 });
       sourceCount.get(key)!.count++;
       sessionSrc.set(s.session_id, key);
+      sessionCampaign.set(s.session_id, camp);
+      if (s.revenue_usd) {
+        sourceRevenue.set(key, (sourceRevenue.get(key) ?? 0) + parseFloat(s.revenue_usd));
+      }
+      // Campaign counts
+      if (!campCount.has(key))   campCount.set(key,   new Map());
+      if (!campRevenue.has(key)) campRevenue.set(key, new Map());
+      campCount.get(key)!.set(camp, (campCount.get(key)!.get(camp) ?? 0) + 1);
+      if (s.revenue_usd) {
+        campRevenue.get(key)!.set(camp, (campRevenue.get(key)!.get(camp) ?? 0) + parseFloat(s.revenue_usd));
+      }
     }
 
     // Load all events for these sessions
@@ -140,6 +159,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const productCount       = new Map<string, number>();
     const postPurchaseCount  = new Map<string, number>();
     const sourceOrders       = new Map<string, number>(); // orders per source
+    const campOrders         = new Map<string, Map<string, number>>(); // source → campaign → orders
     let cartCount     = 0;
     let checkoutCount = 0;
     let thankyouCount = 0;
@@ -166,6 +186,9 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
         thankyouCount++;
         const srcKey = sessionSrc.get(sid) ?? 'direct';
         sourceOrders.set(srcKey, (sourceOrders.get(srcKey) ?? 0) + 1);
+        const camp = sessionCampaign.get(sid) ?? '';
+        if (!campOrders.has(srcKey)) campOrders.set(srcKey, new Map());
+        campOrders.get(srcKey)!.set(camp, (campOrders.get(srcKey)!.get(camp) ?? 0) + 1);
       }
     }
 
@@ -194,7 +217,25 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
         .map(([id, { label, count }]) => {
           const orders   = sourceOrders.get(id) ?? 0;
           const convRate = count > 0 ? Math.round(orders / count * 1000) / 10 : 0;
-          return { id, label, count, pct: pct(count), orders, convRate };
+          const revenue  = Math.round((sourceRevenue.get(id) ?? 0) * 100) / 100;
+          // Campaign breakdown — only include if there are named campaigns
+          const cmap = campCount.get(id);
+          const rmap = campRevenue.get(id);
+          const omap = campOrders.get(id);
+          const allCampaigns = cmap
+            ? Array.from(cmap.entries())
+                .map(([camp, cnt]) => ({
+                  label:   camp || '(not set)',
+                  count:   cnt,
+                  orders:  omap?.get(camp) ?? 0,
+                  revenue: Math.round((rmap?.get(camp) ?? 0) * 100) / 100,
+                  pct:     Math.round((cnt / count) * 100),
+                }))
+                .sort((a, b) => b.count - a.count)
+            : [];
+          // Only expose breakdown if there is at least one named campaign (not just blanks)
+          const breakdown = allCampaigns.some(c => c.label !== '(not set)') ? allCampaigns : [];
+          return { id, label, count, pct: pct(count), orders, convRate, revenue, breakdown };
         })
         .sort((a, b) => b.count - a.count),
       landingPages:      toArr(landingCount),

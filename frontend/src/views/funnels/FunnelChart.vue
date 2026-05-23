@@ -1,200 +1,270 @@
 <template>
   <div class="chart-wrap">
 
-    <!-- Summary row -->
+    <!-- ── Summary row ──────────────────────────────────── -->
     <div class="summary-row">
       <div class="summary-stat">
-        <span class="summary-val">{{ result.total.toLocaleString() }}</span>
+        <span class="summary-val">{{ primary.total.toLocaleString() }}</span>
         <span class="summary-label">Started funnel</span>
       </div>
+
       <div class="summary-stat">
-        <span class="summary-val c-green">{{ result.overall_conversion }}%</span>
+        <div class="conv-pair">
+          <span class="summary-val c-green">{{ fmtPct(primary.overall_conversion) }}%</span>
+          <span v-if="compare" class="summary-val c-compare">{{ fmtPct(compare.overall_conversion) }}%</span>
+        </div>
         <span class="summary-label">Overall conversion</span>
       </div>
+
       <div class="summary-stat">
-        <span class="summary-val c-teal">{{ result.steps[result.steps.length - 1]?.count.toLocaleString() ?? 0 }}</span>
+        <div class="conv-pair">
+          <span class="summary-val c-teal">
+            {{ (primary.steps[primary.steps.length - 1]?.count ?? 0).toLocaleString() }}
+          </span>
+          <span v-if="compare" class="summary-val c-compare">
+            {{ (compare.steps[compare.steps.length - 1]?.count ?? 0).toLocaleString() }}
+          </span>
+        </div>
         <span class="summary-label">Completed funnel</span>
       </div>
     </div>
 
-    <!-- Bars -->
+    <!-- ── Bars ─────────────────────────────────────────── -->
     <div class="bars-area">
-      <div
-        v-for="(step, i) in result.steps"
-        :key="i"
-        class="bar-col"
-      >
-        <!-- Bar track -->
-        <div class="bar-track">
-          <div class="bar-bg" />
-          <div
-            class="bar-fill"
-            :class="i === 0 ? 'bar-first' : 'bar-rest'"
-            :style="{ height: barHeight(step) + '%' }"
-          >
-            <span class="bar-pct-label">{{ step.pct_total }}%</span>
-          </div>
-        </div>
 
-        <!-- Step label -->
-        <div class="bar-label" :title="step.label">{{ step.label }}</div>
+      <!-- Track row -->
+      <div class="tracks-row">
+        <div
+          v-for="(step, i) in primary.steps"
+          :key="'t' + i"
+          class="bar-track-wrap"
+        >
+          <div class="bar-track">
+            <!-- Primary bar -->
+            <div
+              class="bar-fill bar-primary"
+              :class="{ 'bar-half': !!compare }"
+              :style="{ height: fmtH(step.pct_total) + '%' }"
+            >
+              <span class="bar-pct-label">{{ fmtPct(step.pct_total) }}%</span>
+            </div>
 
-        <!-- Stats below bar -->
-        <div class="bar-stats">
-          <div class="stat-line">
-            <span class="stat-arrow arrived">→</span>
-            <span class="stat-count">{{ step.count.toLocaleString() }}</span>
-            <span class="stat-pct arrived">({{ step.pct_prev }}%)</span>
-            <span class="stat-desc">{{ i === 0 ? 'Started' : 'Reached' }}</span>
-          </div>
-          <div class="stat-line" v-if="i > 0 && step.drop_off > 0">
-            <span class="stat-arrow dropped">↓</span>
-            <span class="stat-count dropped">{{ step.drop_off.toLocaleString() }}</span>
-            <span class="stat-pct dropped">({{ (100 - step.pct_prev).toFixed(1) }}%)</span>
-            <span class="stat-desc">Dropped off</span>
+            <!-- Compare bar (side-by-side) -->
+            <div
+              v-if="compare"
+              class="bar-fill bar-compare"
+              :style="{ height: fmtH(compare.steps[i]?.pct_total ?? 0) + '%' }"
+            >
+              <span class="bar-pct-label">{{ fmtPct(compare.steps[i]?.pct_total ?? 0) }}%</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
+      <!-- Info row -->
+      <div class="info-row">
+        <div
+          v-for="(step, i) in primary.steps"
+          :key="'i' + i"
+          class="bar-info"
+        >
+          <div class="bar-label" :title="step.label">{{ step.label }}</div>
+
+          <!-- Primary stats -->
+          <div class="bar-stats">
+            <div class="stat-line">
+              <span class="dot dot-primary" />
+              <span class="stat-count">{{ step.count.toLocaleString() }}</span>
+              <span class="stat-pct c-green">({{ fmtPct(step.pct_prev) }}%)</span>
+              <span class="stat-desc">{{ i === 0 ? 'Started' : 'Reached' }}</span>
+            </div>
+            <div class="stat-line" v-if="i > 0 && step.drop_off > 0">
+              <span class="dot dot-primary" style="opacity:0" />
+              <span class="stat-count c-drop">{{ step.drop_off.toLocaleString() }}</span>
+              <span class="stat-pct c-drop">({{ fmtPct(100 - step.pct_prev) }}%)</span>
+              <span class="stat-desc">Dropped off</span>
+            </div>
+          </div>
+
+          <!-- Compare stats -->
+          <div class="bar-stats compare-stats" v-if="compare && compare.steps[i]">
+            <div class="stat-line">
+              <span class="dot dot-compare" />
+              <span class="stat-count">{{ compare.steps[i].count.toLocaleString() }}</span>
+              <span class="stat-pct c-compare">({{ fmtPct(compare.steps[i].pct_prev) }}%)</span>
+              <span class="stat-desc">{{ i === 0 ? 'Started' : 'Reached' }}</span>
+            </div>
+            <div class="stat-line" v-if="i > 0 && compare.steps[i].drop_off > 0">
+              <span class="dot dot-compare" style="opacity:0" />
+              <span class="stat-count c-drop">{{ compare.steps[i].drop_off.toLocaleString() }}</span>
+              <span class="stat-pct c-drop">({{ fmtPct(100 - compare.steps[i].pct_prev) }}%)</span>
+              <span class="stat-desc">Dropped off</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-
 interface StepResult {
-  label:       string
-  count:       number
-  pct_prev:    number
-  pct_total:   number
-  drop_off:    number
+  label:     string
+  count:     number
+  pct_prev:  number
+  pct_total: number
+  drop_off:  number
 }
 
 interface FunnelResult {
-  total:               number
-  overall_conversion:  number
-  steps:               StepResult[]
+  total:              number
+  overall_conversion: number
+  steps:              StepResult[]
 }
 
-const props = defineProps<{ result: FunnelResult }>()
+const props = defineProps<{
+  primary:  FunnelResult
+  compare?: FunnelResult
+}>()
 
-function barHeight(step: StepResult): number {
-  // height is pct_total of step 1. Step 1 is always 100%.
-  return step.pct_total
+function fmtH(v: number): number {
+  return Math.max(v, 0)      // pct_total 0–100, maps directly to % height
+}
+
+function fmtPct(v: number): string {
+  if (v >= 10) return v.toFixed(1)
+  return v.toFixed(2)
 }
 </script>
 
 <style scoped>
-/* Summary row */
+/* ── Summary ─────────────────────────────────────── */
 .summary-row {
-  display: flex;
-  gap: 2rem;
+  display: flex; gap: 2rem;
   padding: .75rem 1rem;
   background: rgba(6,182,212,.05);
   border: 1px solid rgba(6,182,212,.15);
-  border-radius: 10px;
-  margin-bottom: 1.5rem;
+  border-radius: 10px; margin-bottom: 1.5rem;
 }
 .summary-stat { display: flex; flex-direction: column; gap: .15rem; }
 .summary-val  { font-size: 1.5rem; font-weight: 700; line-height: 1; }
 .summary-label { font-size: .68rem; color: var(--soft); text-transform: uppercase; letter-spacing: .04em; }
-.c-green { color: #22c55e; }
-.c-teal  { color: var(--accent); }
+.c-green   { color: #22c55e; }
+.c-teal    { color: var(--accent); }
+.c-compare { color: #f43f5e; }
+.c-drop    { color: #ef4444; }
 
-/* Bars */
-.bars-area {
-  display: flex;
-  align-items: flex-end;
-  gap: 0;
-  overflow-x: auto;
-  padding-bottom: .5rem;
+.conv-pair { display: flex; align-items: baseline; gap: .6rem; }
+
+/* ── Bars wrapper ────────────────────────────────── */
+.bars-area { display: flex; flex-direction: column; overflow-x: auto; }
+
+/* Track row */
+.tracks-row {
+  display: flex; align-items: flex-end;
+  height: 240px;
 }
 
-.bar-col {
-  flex: 1;
-  min-width: 120px;
-  max-width: 220px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: .6rem;
-  padding: 0 .5rem;
+.bar-track-wrap {
+  flex: 1; min-width: 120px; max-width: 220px;
+  height: 100%;
+  padding: 0 .75rem;
   border-right: 1px solid var(--border);
+  box-sizing: border-box;
 }
-.bar-col:last-child { border-right: none; }
+.bar-track-wrap:last-child { border-right: none; }
 
-/* Bar visualization */
 .bar-track {
-  width: 100%;
-  height: 200px;
+  width: 100%; height: 100%;
   position: relative;
-  display: flex;
-  align-items: flex-end;
-}
-
-.bar-bg {
-  position: absolute;
-  inset: 0;
   background: rgba(0,0,0,.04);
   border-radius: 6px 6px 0 0;
+  display: flex;
+  align-items: flex-end;    /* bars grow from bottom inside flex */
 }
 
+/* Bar fills — side by side when compare present */
 .bar-fill {
-  position: relative;
-  width: 100%;
+  position: absolute;
+  bottom: 0;
   border-radius: 6px 6px 0 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: .5rem;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: .4rem;
   transition: height .6s ease;
-  min-height: 24px;
+  min-height: 22px;
+  left: 0; right: 0;   /* full width by default */
 }
-.bar-first { background: #1d4ed8; }
-.bar-rest  { background: #3b82f6; }
+
+/* When compare present, split each bar to half width */
+.bar-fill.bar-half {
+  left: 0; right: 50%;
+  border-radius: 6px 0 0 0;
+}
+
+.bar-primary { background: #1d4ed8; }
+.bar-primary.bar-half { background: #3b82f6; }
+
+.bar-compare {
+  position: absolute; bottom: 0;
+  left: 50%; right: 0;
+  border-radius: 0 6px 0 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: .4rem;
+  transition: height .6s ease;
+  min-height: 22px;
+  background: #f43f5e;
+}
 
 .bar-pct-label {
-  font-size: .78rem;
-  font-weight: 700;
-  color: #fff;
+  font-size: .72rem; font-weight: 700; color: #fff;
 }
 
-/* Label */
-.bar-label {
-  font-size: .72rem;
-  color: var(--text);
-  text-align: center;
-  line-height: 1.3;
-  max-width: 100%;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  word-break: break-word;
-}
-
-/* Stats */
-.bar-stats {
+/* ── Info row ─────────────────────────────────────── */
+.info-row {
   display: flex;
-  flex-direction: column;
-  gap: .25rem;
-  width: 100%;
-  padding-top: .25rem;
+  border-top: 2px solid var(--border);
+}
+
+.bar-info {
+  flex: 1; min-width: 120px; max-width: 220px;
+  display: flex; flex-direction: column; gap: .5rem;
+  padding: .65rem .75rem 1rem;
+  border-right: 1px solid var(--border); box-sizing: border-box;
+}
+.bar-info:last-child { border-right: none; }
+
+.bar-label {
+  font-size: .72rem; color: var(--text); text-align: center; line-height: 1.3;
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word;
+}
+
+.bar-stats {
+  display: flex; flex-direction: column; gap: .35rem;
+  padding-top: .4rem;
   border-top: 1px solid var(--border);
 }
-.stat-line {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  font-size: .72rem;
-  flex-wrap: wrap;
-}
-.stat-arrow  { font-weight: 700; flex-shrink: 0; }
-.stat-count  { font-weight: 600; color: var(--text); }
-.stat-pct    { color: var(--soft); }
-.stat-desc   { color: var(--soft); }
 
-.arrived { color: #22c55e; }
-.dropped  { color: #ef4444; }
+.compare-stats {
+  border-top: 1px dashed rgba(244,63,94,.25);
+  padding-top: .35rem;
+}
+
+.stat-line {
+  display: flex; align-items: center; gap: .28rem;
+  font-size: .73rem; flex-wrap: wrap; line-height: 1.4;
+}
+
+/* Colored dot indicator */
+.dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-primary { background: #3b82f6; }
+.dot-compare { background: #f43f5e; }
+
+.stat-count { font-weight: 600; color: var(--text); }
+.stat-pct   { color: var(--soft); }
+.stat-desc  { color: var(--soft); }
 </style>

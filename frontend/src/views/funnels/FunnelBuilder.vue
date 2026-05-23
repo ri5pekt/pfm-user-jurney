@@ -247,7 +247,7 @@ onMounted(() => emit('update:steps', steps.value))
 /* Steps */
 .steps { display: flex; flex-direction: column; gap: 0; }
 .step-wrap { display: flex; flex-direction: column; }
-.connector { width: 2px; height: 14px; background: var(--border); margin-left: 1.15rem; }
+.connector { width: 2px; height: 14px; background: var(--border); margin-left: 11px; }
 
 .step-row { display: flex; align-items: flex-start; gap: .65rem; }
 .step-num {
