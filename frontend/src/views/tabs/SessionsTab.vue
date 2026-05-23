@@ -95,6 +95,7 @@
             <th>First Seen</th>
             <th>Session</th>
             <th>Pages</th>
+            <th>Location</th>
             <th>Channel</th>
             <th>Source</th>
             <th>Placement</th>
@@ -103,15 +104,27 @@
         </thead>
         <tbody>
           <tr v-if="loading && sessions.length === 0">
-            <td colspan="7" class="state-cell">Loading…</td>
+            <td colspan="8" class="state-cell">Loading…</td>
           </tr>
           <tr v-else-if="sessions.length === 0">
-            <td colspan="7" class="state-cell">No sessions yet.</td>
+            <td colspan="8" class="state-cell">No sessions yet.</td>
           </tr>
           <tr v-for="s in sessions" :key="s.session_id" class="row clickable" @click="openSession(s.session_id)">
             <td class="col-time">{{ formatTime(s.first_seen) }}</td>
             <td class="col-session">{{ s.session_id.slice(0, 8) }}</td>
             <td class="col-pages">{{ s.page_count }}</td>
+            <td class="col-location">
+              <span v-if="s.country" class="location-cell">
+                <img
+                  :src="`/flags/${s.country}.png`"
+                  :alt="s.country"
+                  class="flag-img"
+                  @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+                />
+                <span class="location-text">{{ s.city || s.state_name || s.country }}</span>
+              </span>
+              <span v-else class="soft">—</span>
+            </td>
             <td class="col-channel">
               <span class="badge" :class="channelClass(s.channel)">{{ channelLabel(s.channel) }}</span>
             </td>
@@ -149,6 +162,9 @@ interface Session {
   placement:   string
   campaign_id: string
   page_count:  number
+  country:     string | null
+  state_name:  string | null
+  city:        string | null
 }
 
 interface ChannelStat { channel: string; count: string }
@@ -408,9 +424,16 @@ td { padding: .65rem 1rem; vertical-align: middle; }
 .col-time     { color: var(--soft); white-space: nowrap; font-size: .8rem; }
 .col-session  { color: var(--accent); font-family: monospace; font-size: .85rem; font-weight: 600; }
 .col-pages    { color: var(--soft); font-size: .8rem; text-align: center; }
+.col-location { font-size: .8rem; }
 .col-source   { color: var(--text); font-size: .82rem; }
 .col-placement{ color: var(--soft); font-size: .78rem; }
 .col-entry    { color: var(--text); font-size: .8rem; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Location */
+.location-cell { display: flex; align-items: center; gap: .35rem; }
+.flag-img      { width: 18px; height: 13px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
+.location-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.soft          { color: var(--soft); }
 
 /* Badges */
 .badge { display: inline-block; padding: .18rem .55rem; border-radius: 4px; font-size: .73rem; font-weight: 600; white-space: nowrap; }

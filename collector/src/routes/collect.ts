@@ -25,6 +25,12 @@ interface CollectBody {
   referrer?:   unknown;
 }
 
+function getClientIp(req: import('express').Request): string | null {
+  const forwarded = (req.headers['x-forwarded-for'] as string) ?? '';
+  const first = forwarded.split(',')[0]?.trim();
+  return first || (req.headers['x-real-ip'] as string) || req.socket.remoteAddress || null;
+}
+
 export const collectRouter = Router();
 
 collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -51,11 +57,14 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     // Redis error — proceed without dedup rather than dropping the event
   }
 
+  const ip = getClientIp(req);
+
   const event = JSON.stringify({
     session_id,
     page_url,
     referrer,
     user_agent: req.headers['user-agent'] || '',
+    ip:         ip ?? '',
     timestamp:  new Date().toISOString(),
   });
 

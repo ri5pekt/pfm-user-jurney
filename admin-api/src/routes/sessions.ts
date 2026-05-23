@@ -34,7 +34,8 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const rows = await pgPool.query(
     `SELECT session_id, first_seen, last_seen, entry_url, referrer,
             source, medium, channel, placement, campaign_id,
-            utm_source, utm_medium, utm_campaign, page_count
+            utm_source, utm_medium, utm_campaign, page_count,
+            country, state_name, city
      FROM   sessions ${where}
      ORDER  BY first_seen DESC
      LIMIT  $${params.length - 1} OFFSET $${params.length}`,

@@ -85,6 +85,18 @@
             <span class="attr-label">Pages</span>
             <span class="attr-value">{{ displayEvents.length }}</span>
           </div>
+          <div class="attr-row" v-if="session.country">
+            <span class="attr-label">Location</span>
+            <span class="attr-value location-cell">
+              <img
+                :src="`/flags/${session.country}.png`"
+                :alt="session.country"
+                class="flag-img"
+                @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+              />
+              <span>{{ [session.city, session.state_name, session.country].filter(Boolean).join(', ') }}</span>
+            </span>
+          </div>
           <div class="attr-row">
             <span class="attr-label">Entry Page</span>
             <a class="attr-link" :href="session.entry_url" target="_blank" rel="noopener">{{ urlPath(session.entry_url) }}</a>
@@ -148,6 +160,9 @@ interface SessionDetail {
   utm_medium:   string
   utm_campaign: string
   page_count:   number
+  country:      string | null
+  state_name:   string | null
+  city:         string | null
 }
 
 interface EventRow {
@@ -309,6 +324,9 @@ function channelClass(ch: string) {
 .attr-value.mono { font-family: monospace; font-size: .8rem; }
 .attr-link { font-size: .82rem; color: var(--accent); text-decoration: none; word-break: break-all; }
 .attr-link:hover { text-decoration: underline; }
+
+.location-cell { display: flex; align-items: center; gap: .4rem; }
+.flag-img      { width: 20px; height: 14px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
 
 /* Badge */
 .badge { display: inline-block; padding: .18rem .55rem; border-radius: 4px; font-size: .73rem; font-weight: 600; }

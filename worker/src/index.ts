@@ -1,6 +1,7 @@
 import { redisClient } from './lib/redis';
 import { pgPool } from './lib/postgres';
 import { parseAttribution } from './lib/attribution';
+import { fetchGeoForIp } from './lib/geo';
 
 const QUEUE_KEY  = process.env.REDIS_QUEUE_KEY  || 'events_queue';
 const BATCH_SIZE = Number(process.env.WORKER_BATCH_SIZE)  || 100;
@@ -14,6 +15,7 @@ interface RawEvent {
   page_url:   string;
   referrer:   string;
   user_agent: string;
+  ip:         string;
   timestamp:  string;
 }
 
@@ -82,17 +84,30 @@ async function drainBatch(): Promise<void> {
     ],
   );
 
+  // ── Geo lookup — batch unique IPs ────────────────────────────────
+  const apiKey = process.env.IP_API_KEY?.trim() || null;
+  const geoCache = new Map<string, Awaited<ReturnType<typeof fetchGeoForIp>>>();
+  if (apiKey) {
+    const uniqueIps = [...new Set(deduped.map(e => e.ip).filter(ip => ip && ip.length > 0))];
+    await Promise.all(uniqueIps.map(async ip => {
+      const geo = await fetchGeoForIp(ip, apiKey);
+      geoCache.set(ip, geo);
+    }));
+  }
+
   // ── Upsert sessions ──────────────────────────────────────────────
-  // Each event touches its session: first-ever INSERT sets attribution,
+  // Each event touches its session: first-ever INSERT sets attribution + geo,
   // subsequent conflicts only update last_seen + page_count.
   for (const ev of deduped) {
     const attr = parseAttribution(ev.page_url, ev.referrer || '');
+    const geo  = geoCache.get(ev.ip) ?? null;
     await pgPool.query(
       `INSERT INTO sessions
          (session_id, first_seen, last_seen, entry_url, referrer,
           source, medium, channel, placement, campaign_id,
-          utm_source, utm_medium, utm_campaign, page_count)
-       VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, 1)
+          utm_source, utm_medium, utm_campaign, page_count,
+          ip, country, state, state_name, city)
+       VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, 1, $13,$14,$15,$16,$17)
        ON CONFLICT (session_id) DO UPDATE
          SET last_seen  = GREATEST(sessions.last_seen, EXCLUDED.last_seen),
              page_count = sessions.page_count + 1`,
@@ -104,6 +119,11 @@ async function drainBatch(): Promise<void> {
         attr.source,  attr.medium,  attr.channel,
         attr.placement, attr.campaign_id,
         attr.utm_source, attr.utm_medium, attr.utm_campaign,
+        ev.ip || null,
+        geo?.country    ?? null,
+        geo?.state      ?? null,
+        geo?.state_name ?? null,
+        geo?.city       ?? null,
       ],
     );
   }
