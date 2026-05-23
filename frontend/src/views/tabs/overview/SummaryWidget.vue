@@ -21,7 +21,10 @@
       </div>
       <div class="metric">
         <div class="metric-value c-green">{{ fmtUsd(props.data.totalRevenue) }}</div>
-        <div class="metric-label">Total Revenue</div>
+        <div class="metric-label">
+          Total Revenue
+          <span class="metric-sub">{{ props.data.trackedOrders.toLocaleString() }} tracked orders</span>
+        </div>
       </div>
       <div class="metric">
         <div class="metric-value">{{ fmtUsd(props.data.aov) }}</div>
@@ -67,6 +70,7 @@ function fmtUsd(val: number): string {
   color: var(--text);
 }
 .metric-label { font-size: 0.72rem; color: var(--soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.metric-sub   { display: block; font-size: 0.65rem; letter-spacing: 0; text-transform: none; color: #94a3b8; margin-top: 0.15rem; }
 .c-green  { color: #22c55e; }
 .c-amber  { color: #f59e0b; }
 .c-teal   { color: var(--accent); }

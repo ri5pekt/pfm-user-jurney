@@ -23,6 +23,7 @@ export interface FunnelData {
   total:             number
   totalRevenue:      number
   aov:               number
+  trackedOrders:     number
   countries:         CountryItem[]
   sources:           FunnelItem[]
   landingPages:      FunnelItem[]

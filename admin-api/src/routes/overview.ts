@@ -85,9 +85,10 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
         `SELECT session_id, channel, source FROM sessions ${where} ORDER BY first_seen DESC`,
         values,
       ),
-      pgPool.query<{ total_revenue: string; aov: string }>(
+      pgPool.query<{ total_revenue: string; aov: string; tracked_orders: string }>(
         `SELECT COALESCE(SUM(revenue_usd), 0)::numeric AS total_revenue,
-                COALESCE(AVG(revenue_usd), 0)::numeric AS aov
+                COALESCE(AVG(revenue_usd), 0)::numeric AS aov,
+                COUNT(*)                               AS tracked_orders
          FROM   sessions ${whereRevenue}`,
         values,
       ),
@@ -103,7 +104,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
 
     const total = sessionsRes.rows.length;
     if (total === 0) {
-      res.json({ total: 0, totalRevenue: 0, aov: 0, countries: [],
+      res.json({ total: 0, totalRevenue: 0, aov: 0, trackedOrders: 0, countries: [],
         sources: [], landingPages: [], pages: [], productPages: [],
         cart: { count: 0, pct: 0 }, checkout: { count: 0, pct: 0 }, thankyou: { count: 0, pct: 0 } });
       return;
@@ -168,8 +169,9 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       }
     }
 
-    const totalRevenue = parseFloat(revenueRes.rows[0]?.total_revenue ?? '0');
-    const aov          = parseFloat(revenueRes.rows[0]?.aov          ?? '0');
+    const totalRevenue   = parseFloat(revenueRes.rows[0]?.total_revenue  ?? '0');
+    const aov            = parseFloat(revenueRes.rows[0]?.aov           ?? '0');
+    const trackedOrders  = parseInt(revenueRes.rows[0]?.tracked_orders  ?? '0', 10);
     const countries    = countriesRes.rows.map(r => ({
       country: r.country,
       count:   parseInt(r.count, 10),
@@ -184,8 +186,9 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
 
     res.json({
       total,
-      totalRevenue: Math.round(totalRevenue * 100) / 100,
-      aov:          Math.round(aov * 100) / 100,
+      totalRevenue:  Math.round(totalRevenue * 100) / 100,
+      aov:           Math.round(aov * 100) / 100,
+      trackedOrders,
       countries,
       sources: Array.from(sourceCount.entries())
         .map(([id, { label, count }]) => {
