@@ -2,6 +2,7 @@ import { redisClient } from './lib/redis';
 import { pgPool } from './lib/postgres';
 import { parseAttribution } from './lib/attribution';
 import { fetchGeoForIp } from './lib/geo';
+import { getRates, toUsd } from './lib/fx';
 
 const QUEUE_KEY  = process.env.REDIS_QUEUE_KEY  || 'events_queue';
 const BATCH_SIZE = Number(process.env.WORKER_BATCH_SIZE)  || 100;
@@ -134,6 +135,38 @@ async function drainBatch(): Promise<void> {
         isPageView ? 1 : 0,
       ],
     );
+  }
+
+  // ── Enrich sessions with order data ─────────────────────────────
+  // Only runs for order_completed events that carry metadata with order_id + value + currency
+  const orderEvents = deduped.filter(e =>
+    e.event_type === 'order_completed' &&
+    e.metadata != null &&
+    typeof e.metadata.order_id !== 'undefined' &&
+    typeof e.metadata.value    === 'number' &&
+    typeof e.metadata.currency === 'string',
+  );
+
+  if (orderEvents.length > 0) {
+    const fxKey = process.env.FX_API_KEY?.trim() || null;
+    const rates  = fxKey ? await getRates(fxKey) : null;
+
+    for (const ev of orderEvents) {
+      const meta       = ev.metadata!;
+      const orderId    = String(meta.order_id);
+      const amount     = meta.value as number;
+      const currency   = meta.currency as string;
+      const revenueUsd = rates ? toUsd(amount, currency, rates) : null;
+
+      await pgPool.query(
+        `UPDATE sessions
+         SET order_id    = $1,
+             revenue_usd = $2
+         WHERE session_id = $3
+           AND order_id IS NULL`,
+        [orderId, revenueUsd, ev.session_id],
+      );
+    }
   }
 
   console.log(`[worker] inserted ${deduped.length} events (${events.length - deduped.length} deduped), upserted sessions`);

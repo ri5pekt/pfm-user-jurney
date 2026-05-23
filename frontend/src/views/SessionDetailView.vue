@@ -85,6 +85,14 @@
             <span class="attr-label">Pages</span>
             <span class="attr-value">{{ displayEvents.length }}</span>
           </div>
+          <div class="attr-row" v-if="session.order_id">
+            <span class="attr-label">Order ID</span>
+            <span class="attr-value mono">{{ session.order_id }}</span>
+          </div>
+          <div class="attr-row" v-if="session.revenue_usd">
+            <span class="attr-label">Revenue</span>
+            <span class="attr-value revenue-value">${{ Number(session.revenue_usd).toFixed(2) }} USD</span>
+          </div>
           <div class="attr-row" v-if="session.country">
             <span class="attr-label">Location</span>
             <span class="attr-value location-cell">
@@ -175,6 +183,8 @@ interface SessionDetail {
   country:      string | null
   state_name:   string | null
   city:         string | null
+  order_id:     string | null
+  revenue_usd:  string | null
 }
 
 interface EventRow {
@@ -357,6 +367,7 @@ function channelClass(ch: string) {
 .attr-link { font-size: .82rem; color: var(--accent); text-decoration: none; word-break: break-all; }
 .attr-link:hover { text-decoration: underline; }
 
+.revenue-value { font-weight: 700; color: #16a34a; }
 .location-cell { display: flex; align-items: center; gap: .4rem; }
 .flag-img      { width: 20px; height: 14px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
 

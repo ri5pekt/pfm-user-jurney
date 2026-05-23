@@ -35,7 +35,8 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     `SELECT session_id, first_seen, last_seen, entry_url, referrer,
             source, medium, channel, placement, campaign_id,
             utm_source, utm_medium, utm_campaign, page_count,
-            country, state_name, city
+            country, state_name, city,
+            order_id, revenue_usd
      FROM   sessions ${where}
      ORDER  BY first_seen DESC
      LIMIT  $${params.length - 1} OFFSET $${params.length}`,
