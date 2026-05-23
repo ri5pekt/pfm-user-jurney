@@ -9,7 +9,7 @@ COMPOSE_FILE="docker-compose.yml"
 
 echo "==> Pulling latest code..."
 cd "$REPO_DIR"
-git pull origin main
+git pull origin master
 
 echo "==> Building and restarting containers..."
 docker compose -f "$COMPOSE_FILE" build --no-cache
