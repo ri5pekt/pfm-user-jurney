@@ -245,7 +245,7 @@ onUnmounted(()    => { stopLive() })
   border-radius: 6px; color: var(--text); font-size: 0.8rem; cursor: pointer;
 }
 .ctrl-dp {
-  width: 230px;
+  width: 310px;
   font-size: 0.78rem;
 }
 /* Slim down the vuedatepicker input to match our toolbar style */
