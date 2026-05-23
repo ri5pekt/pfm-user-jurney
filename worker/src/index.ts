@@ -11,12 +11,13 @@ const INTERVAL_MS = Number(process.env.WORKER_INTERVAL_MS) || 3000;
 const DEDUP_WINDOW_MS = 5000;
 
 interface RawEvent {
-  session_id: string;
-  page_url:   string;
-  referrer:   string;
-  user_agent: string;
-  ip:         string;
-  timestamp:  string;
+  session_id:  string;
+  event_type:  string;
+  page_url:    string;
+  referrer:    string;
+  user_agent:  string;
+  ip:          string;
+  timestamp:   string;
 }
 
 function getBasePath(url: string): string {
@@ -37,12 +38,14 @@ function deduplicateEvents(events: RawEvent[]): RawEvent[] {
     const timeMs = new Date(ev.timestamp).getTime();
     const prev   = lastEvt.get(ev.session_id);
 
-    if (prev && prev.path === path && timeMs - prev.timeMs <= DEDUP_WINDOW_MS) {
+    const isPageView = (ev.event_type || 'page_view') === 'page_view';
+
+    if (isPageView && prev && prev.path === path && timeMs - prev.timeMs <= DEDUP_WINDOW_MS) {
       // Replace the earlier event with this one in-place (keep variant URL)
       result[prev.idx] = ev;
       lastEvt.set(ev.session_id, { idx: prev.idx, path, timeMs });
     } else {
-      lastEvt.set(ev.session_id, { idx: result.length, path, timeMs });
+      if (isPageView) lastEvt.set(ev.session_id, { idx: result.length, path, timeMs });
       result.push(ev);
     }
   }
@@ -72,15 +75,16 @@ async function drainBatch(): Promise<void> {
 
   // ── Insert events ────────────────────────────────────────────────
   await pgPool.query(
-    `INSERT INTO events (session_id, page_url, referrer, user_agent, timestamp)
-     SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::timestamptz[])
+    `INSERT INTO events (session_id, event_type, page_url, referrer, user_agent, timestamp)
+     SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
      ON CONFLICT DO NOTHING`,
     [
       deduped.map(e => e.session_id),
+      deduped.map(e => e.event_type  || 'page_view'),
       deduped.map(e => e.page_url),
-      deduped.map(e => e.referrer   || ''),
-      deduped.map(e => e.user_agent || ''),
-      deduped.map(e => e.timestamp  || new Date().toISOString()),
+      deduped.map(e => e.referrer    || ''),
+      deduped.map(e => e.user_agent  || ''),
+      deduped.map(e => e.timestamp   || new Date().toISOString()),
     ],
   );
 
@@ -99,18 +103,19 @@ async function drainBatch(): Promise<void> {
   // Each event touches its session: first-ever INSERT sets attribution + geo,
   // subsequent conflicts only update last_seen + page_count.
   for (const ev of deduped) {
-    const attr = parseAttribution(ev.page_url, ev.referrer || '');
-    const geo  = geoCache.get(ev.ip) ?? null;
+    const attr       = parseAttribution(ev.page_url, ev.referrer || '');
+    const geo        = geoCache.get(ev.ip) ?? null;
+    const isPageView = (ev.event_type || 'page_view') === 'page_view';
     await pgPool.query(
       `INSERT INTO sessions
          (session_id, first_seen, last_seen, entry_url, referrer,
           source, medium, channel, placement, campaign_id,
           utm_source, utm_medium, utm_campaign, page_count,
           ip, country, state, state_name, city)
-       VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, 1, $13,$14,$15,$16,$17)
+       VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, $18::int, $13,$14,$15,$16,$17)
        ON CONFLICT (session_id) DO UPDATE
          SET last_seen  = GREATEST(sessions.last_seen, EXCLUDED.last_seen),
-             page_count = sessions.page_count + 1`,
+             page_count = sessions.page_count + $18::int`,
       [
         ev.session_id,
         ev.timestamp || new Date().toISOString(),
@@ -124,6 +129,7 @@ async function drainBatch(): Promise<void> {
         geo?.state      ?? null,
         geo?.state_name ?? null,
         geo?.city       ?? null,
+        isPageView ? 1 : 0,
       ],
     );
   }

@@ -18,15 +18,31 @@
     } catch (e) { return uid(); }
   }
 
-  try {
-    var p = JSON.stringify({ session_id: sid(), page_url: location.href, referrer: document.referrer });
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(URL, new Blob([p], { type: 'application/json' }));
-    } else {
-      var x = new XMLHttpRequest();
-      x.open('POST', URL, true);
-      x.setRequestHeader('Content-Type', 'application/json');
-      x.send(p);
-    }
-  } catch (e) {}
+  function send(eventType, pageUrl, referrer) {
+    try {
+      var p = JSON.stringify({
+        session_id: sid(),
+        event_type: eventType || 'page_view',
+        page_url:   pageUrl   || location.href,
+        referrer:   referrer  !== undefined ? referrer : document.referrer,
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(URL, new Blob([p], { type: 'application/json' }));
+      } else {
+        var x = new XMLHttpRequest();
+        x.open('POST', URL, true);
+        x.setRequestHeader('Content-Type', 'application/json');
+        x.send(p);
+      }
+    } catch (e) {}
+  }
+
+  // Auto-fire page_view on every page load
+  send('page_view', location.href, document.referrer);
+
+  // Global API for custom events
+  // Usage: window.pfmTrack('order_completed')
+  window.pfmTrack = function (eventType) {
+    send(eventType, location.href, '');
+  };
 })();

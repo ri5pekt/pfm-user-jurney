@@ -12,7 +12,7 @@ eventsRouter.get('/', requireAuth, async (req: Request, res: Response): Promise<
 
     const [rows, count] = await Promise.all([
       pgPool.query(
-        `SELECT id, session_id, page_url, referrer, timestamp
+        `SELECT id, session_id, event_type, page_url, referrer, timestamp
          FROM events
          ORDER BY timestamp DESC
          LIMIT $1 OFFSET $2`,

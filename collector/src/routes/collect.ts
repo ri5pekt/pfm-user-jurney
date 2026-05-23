@@ -19,10 +19,13 @@ function isNoisyUrl(url: string): boolean {
   }
 }
 
+const EVENT_TYPE_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
 interface CollectBody {
-  session_id?: unknown;
-  page_url?:   unknown;
-  referrer?:   unknown;
+  session_id?:  unknown;
+  page_url?:    unknown;
+  referrer?:    unknown;
+  event_type?:  unknown;
 }
 
 function getClientIp(req: import('express').Request): string | null {
@@ -40,27 +43,32 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const session_id = typeof body.session_id === 'string' ? body.session_id.trim() : '';
   const page_url   = typeof body.page_url   === 'string' ? body.page_url.trim()   : '';
   const referrer   = typeof body.referrer   === 'string' ? body.referrer.trim()   : '';
+  const raw_type   = typeof body.event_type === 'string' ? body.event_type.trim().toLowerCase() : 'page_view';
+  const event_type = EVENT_TYPE_RE.test(raw_type) ? raw_type : 'page_view';
 
   if (!session_id || !page_url) return;
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isNoisyUrl(page_url)) return;
 
-  // Cross-batch deduplication: drop if same session+path was seen within 5 seconds
-  let pathname = page_url;
-  try { pathname = new URL(page_url).pathname; } catch { /* keep raw url */ }
-  const dedupKey = `dedup:${session_id}`;
-  try {
-    const lastPath = await redisClient.get(dedupKey);
-    if (lastPath === pathname) return; // duplicate within TTL window — drop
-    await redisClient.set(dedupKey, pathname, 'EX', 5);
-  } catch {
-    // Redis error — proceed without dedup rather than dropping the event
+  // Dedup only applies to page_view events — custom events always pass through
+  if (event_type === 'page_view') {
+    let pathname = page_url;
+    try { pathname = new URL(page_url).pathname; } catch { /* keep raw url */ }
+    const dedupKey = `dedup:${session_id}`;
+    try {
+      const lastPath = await redisClient.get(dedupKey);
+      if (lastPath === pathname) return; // duplicate within TTL window — drop
+      await redisClient.set(dedupKey, pathname, 'EX', 5);
+    } catch {
+      // Redis error — proceed without dedup rather than dropping the event
+    }
   }
 
   const ip = getClientIp(req);
 
   const event = JSON.stringify({
     session_id,
+    event_type,
     page_url,
     referrer,
     user_agent: req.headers['user-agent'] || '',

@@ -25,20 +25,24 @@
           <tr>
             <th>Time</th>
             <th>Session</th>
+            <th>Event</th>
             <th>Page</th>
             <th>From</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading && events.length === 0">
-            <td colspan="4" class="state-cell">Loading…</td>
+            <td colspan="5" class="state-cell">Loading…</td>
           </tr>
           <tr v-else-if="events.length === 0">
-            <td colspan="4" class="state-cell">No events yet. Deploy the tracking script to start collecting.</td>
+            <td colspan="5" class="state-cell">No events yet. Deploy the tracking script to start collecting.</td>
           </tr>
           <tr v-for="ev in events" :key="ev.id" class="row">
             <td class="col-time">{{ formatTime(ev.timestamp) }}</td>
             <td class="col-session">{{ ev.session_id.slice(0, 8) }}</td>
+            <td class="col-event">
+              <span class="event-badge" :class="eventClass(ev.event_type)">{{ eventLabel(ev.event_type) }}</span>
+            </td>
             <td class="col-page">{{ urlPath(ev.page_url) }}</td>
             <td class="col-ref">{{ refDomain(ev.referrer) }}</td>
           </tr>
@@ -61,11 +65,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 
 interface Event {
-  id:         number
-  session_id: string
-  page_url:   string
-  referrer:   string
-  timestamp:  string
+  id:          number
+  session_id:  string
+  event_type:  string
+  page_url:    string
+  referrer:    string
+  timestamp:   string
 }
 
 const events    = ref<Event[]>([])
@@ -119,6 +124,17 @@ function formatTime(ts: string): string {
 function urlPath(url: string): string {
   try { return new URL(url).pathname || '/' }
   catch { return url.slice(0, 40) }
+}
+
+function eventLabel(type: string): string {
+  if (!type || type === 'page_view') return 'Page View'
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function eventClass(type: string): string {
+  if (!type || type === 'page_view') return 'ev-pageview'
+  if (type === 'order_completed')    return 'ev-order'
+  return 'ev-custom'
 }
 
 function refDomain(url: string): string {
@@ -259,8 +275,22 @@ td { padding: 0.7rem 1rem; vertical-align: middle; }
 /* Column styles */
 .col-time    { color: var(--soft); white-space: nowrap; font-size: 0.8rem; }
 .col-session { color: var(--accent); font-family: monospace; font-size: 0.85rem; font-weight: 600; }
-.col-page    { color: var(--text); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-event   { white-space: nowrap; }
+.col-page    { color: var(--text); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-ref     { color: var(--soft); font-size: 0.8rem; }
+
+/* Event badges */
+.event-badge {
+  display: inline-block;
+  padding: .18rem .5rem;
+  border-radius: 4px;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ev-pageview { background: #f8fafc; color: var(--soft); }
+.ev-order    { background: #f0fdf4; color: #16a34a; }
+.ev-custom   { background: #fdf4ff; color: #9333ea; }
 
 /* Pagination */
 .pagination {

@@ -78,7 +78,7 @@ sessionsRouter.get('/:id', async (req: Request, res: Response): Promise<void> =>
   const [sessionRow, eventsRow] = await Promise.all([
     pgPool.query(`SELECT * FROM sessions WHERE session_id = $1`, [session_id]),
     pgPool.query(
-      `SELECT timestamp, page_url, referrer
+      `SELECT timestamp, event_type, page_url, referrer
        FROM   events
        WHERE  session_id = $1
        ORDER  BY timestamp ASC`,

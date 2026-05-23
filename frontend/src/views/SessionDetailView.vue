@@ -126,7 +126,12 @@
               <div v-if="idx < displayEvents.length - 1" class="tl-line" />
             </div>
             <div class="tl-body">
-              <div class="tl-time">{{ eventTime(ev.timestamp) }}</div>
+              <div class="tl-time">
+                {{ eventTime(ev.timestamp) }}
+                <span v-if="ev.event_type && ev.event_type !== 'page_view'" class="tl-event-badge" :class="tlEventClass(ev.event_type)">
+                  {{ tlEventLabel(ev.event_type) }}
+                </span>
+              </div>
               <a class="tl-url" :href="ev.page_url" target="_blank" rel="noopener">{{ urlPath(ev.page_url) }}</a>
               <div v-if="ev.referrer && idx === 0" class="tl-ref">from: {{ ev.referrer }}</div>
             </div>
@@ -166,9 +171,10 @@ interface SessionDetail {
 }
 
 interface EventRow {
-  timestamp: string
-  page_url:  string
-  referrer:  string
+  timestamp:  string
+  event_type: string
+  page_url:   string
+  referrer:   string
 }
 
 const route   = useRoute()
@@ -251,6 +257,15 @@ const CHANNEL_LABELS: Record<string, string> = {
   email: 'Email', sms: 'SMS',
   organic_search: 'Organic Search', organic_shopping: 'Organic Shopping',
   organic_social: 'Organic Social', referral: 'Referral', direct: 'Direct',
+}
+
+function tlEventLabel(type: string): string {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function tlEventClass(type: string): string {
+  if (type === 'order_completed') return 'tl-ev-order'
+  return 'tl-ev-custom'
 }
 
 function channelLabel(ch: string) { return CHANNEL_LABELS[ch] || ch || '—' }
@@ -351,7 +366,10 @@ function channelClass(ch: string) {
 .tl-dot.last  { background: #94a3b8; border-color: #94a3b8; }
 .tl-line { flex: 1; width: 2px; background: var(--border); margin: 3px 0; min-height: 14px; }
 .tl-body { padding-bottom: .85rem; min-width: 0; flex: 1; }
-.tl-time { font-size: .72rem; color: var(--soft); margin-bottom: .15rem; }
+.tl-time { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--soft); margin-bottom: .15rem; }
+.tl-event-badge { display: inline-block; padding: .1rem .4rem; border-radius: 3px; font-size: .68rem; font-weight: 600; }
+.tl-ev-order  { background: #f0fdf4; color: #16a34a; }
+.tl-ev-custom { background: #fdf4ff; color: #9333ea; }
 .tl-url  { font-size: .82rem; color: var(--text); text-decoration: none; word-break: break-all; display: block; }
 .tl-url:hover { color: var(--accent); }
 .tl-ref  { font-size: .73rem; color: var(--soft); margin-top: .2rem; word-break: break-all; }
