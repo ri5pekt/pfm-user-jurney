@@ -73,14 +73,38 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     if (end)   { conditions.push(`first_seen <= $${values.push(end)}`);   }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    const sessionsRes = await pgPool.query<{ session_id: string; channel: string; source: string }>(
-      `SELECT session_id, channel, source FROM sessions ${where} ORDER BY first_seen DESC`,
-      values,
-    );
+    const whereRevenue   = conditions.length
+      ? `WHERE ${conditions.join(' AND ')} AND revenue_usd IS NOT NULL`
+      : 'WHERE revenue_usd IS NOT NULL';
+    const whereCountries = conditions.length
+      ? `WHERE ${conditions.join(' AND ')} AND country IS NOT NULL AND country <> ''`
+      : "WHERE country IS NOT NULL AND country <> ''";
+
+    const [sessionsRes, revenueRes, countriesRes] = await Promise.all([
+      pgPool.query<{ session_id: string; channel: string; source: string }>(
+        `SELECT session_id, channel, source FROM sessions ${where} ORDER BY first_seen DESC`,
+        values,
+      ),
+      pgPool.query<{ total_revenue: string; aov: string }>(
+        `SELECT COALESCE(SUM(revenue_usd), 0)::numeric AS total_revenue,
+                COALESCE(AVG(revenue_usd), 0)::numeric AS aov
+         FROM   sessions ${whereRevenue}`,
+        values,
+      ),
+      pgPool.query<{ country: string; count: string }>(
+        `SELECT country, COUNT(*) AS count
+         FROM   sessions ${whereCountries}
+         GROUP  BY country
+         ORDER  BY count DESC
+         LIMIT  30`,
+        values,
+      ),
+    ]);
 
     const total = sessionsRes.rows.length;
     if (total === 0) {
-      res.json({ total: 0, sources: [], landingPages: [], pages: [], productPages: [],
+      res.json({ total: 0, totalRevenue: 0, aov: 0, countries: [],
+        sources: [], landingPages: [], pages: [], productPages: [],
         cart: { count: 0, pct: 0 }, checkout: { count: 0, pct: 0 }, thankyou: { count: 0, pct: 0 } });
       return;
     }
@@ -144,6 +168,14 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       }
     }
 
+    const totalRevenue = parseFloat(revenueRes.rows[0]?.total_revenue ?? '0');
+    const aov          = parseFloat(revenueRes.rows[0]?.aov          ?? '0');
+    const countries    = countriesRes.rows.map(r => ({
+      country: r.country,
+      count:   parseInt(r.count, 10),
+      pct:     Math.round(parseInt(r.count, 10) / total * 100),
+    }));
+
     const pct   = (n: number) => Math.round((n / total) * 100);
     const toArr = (m: Map<string, number>) =>
       Array.from(m.entries())
@@ -152,6 +184,9 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
 
     res.json({
       total,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      aov:          Math.round(aov * 100) / 100,
+      countries,
       sources: Array.from(sourceCount.entries())
         .map(([id, { label, count }]) => {
           const orders   = sourceOrders.get(id) ?? 0;

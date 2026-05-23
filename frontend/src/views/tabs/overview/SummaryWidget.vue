@@ -10,14 +10,22 @@
         <div class="metric-label">Sessions</div>
       </div>
       <div class="metric">
+        <div class="metric-value c-teal">{{ props.data.thankyou.count.toLocaleString() }}</div>
+        <div class="metric-label">Orders</div>
+      </div>
+      <div class="metric">
         <div class="metric-value" :class="convRate >= 2 ? 'c-green' : 'c-amber'">
           {{ convRate }}%
         </div>
         <div class="metric-label">Conversion Rate</div>
       </div>
       <div class="metric">
-        <div class="metric-value c-teal">{{ props.data.thankyou.count.toLocaleString() }}</div>
-        <div class="metric-label">Orders</div>
+        <div class="metric-value c-green">{{ fmtUsd(props.data.totalRevenue) }}</div>
+        <div class="metric-label">Total Revenue</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">{{ fmtUsd(props.data.aov) }}</div>
+        <div class="metric-label">Avg Order Value</div>
       </div>
       <div class="metric">
         <div class="metric-value">{{ props.data.sources.length }}</div>
@@ -36,6 +44,12 @@ const props = defineProps<{ data: FunnelData; rangeLabel: string }>()
 const convRate = computed(() =>
   props.data.total ? +(props.data.thankyou.count / props.data.total * 100).toFixed(1) : 0
 )
+
+function fmtUsd(val: number): string {
+  if (val >= 1_000_000) return '$' + (val / 1_000_000).toFixed(1) + 'M'
+  if (val >= 1_000)     return '$' + (val / 1_000).toFixed(1) + 'K'
+  return '$' + val.toFixed(2)
+}
 </script>
 
 <style scoped>
@@ -43,8 +57,8 @@ const convRate = computed(() =>
 
 .summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem 1.5rem;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem 1rem;
   padding: 0.25rem 0;
 }
 .metric { display: flex; flex-direction: column; gap: 0.2rem; }

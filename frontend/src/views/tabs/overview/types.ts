@@ -13,8 +13,17 @@ export interface SimpleNode {
   pct: number
 }
 
+export interface CountryItem {
+  country: string
+  count:   number
+  pct:     number
+}
+
 export interface FunnelData {
   total:             number
+  totalRevenue:      number
+  aov:               number
+  countries:         CountryItem[]
   sources:           FunnelItem[]
   landingPages:      FunnelItem[]
   pages:             FunnelItem[]

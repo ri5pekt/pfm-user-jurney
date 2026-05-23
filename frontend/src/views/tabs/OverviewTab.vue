@@ -60,6 +60,7 @@
         :items="data.sources"
         color="#3b82f6"
         :top-n="20"
+        :show-conversions="true"
       />
 
       <BarChartWidget
@@ -77,6 +78,12 @@
         :top-n="10"
       />
 
+      <CountriesWidget
+        class="widget"
+        :items="data.countries"
+        :top-n="15"
+      />
+
     </div>
   </div>
 </template>
@@ -85,9 +92,10 @@
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import api from '@/api/index'
 import type { FunnelData } from './overview/types'
-import SummaryWidget  from './overview/SummaryWidget.vue'
-import FunnelWidget   from './overview/FunnelWidget.vue'
-import BarChartWidget from './overview/BarChartWidget.vue'
+import SummaryWidget   from './overview/SummaryWidget.vue'
+import FunnelWidget    from './overview/FunnelWidget.vue'
+import BarChartWidget  from './overview/BarChartWidget.vue'
+import CountriesWidget from './overview/CountriesWidget.vue'
 
 /* ── state ──────────────────────────────────────────────── */
 type Preset = '1h' | 'today' | 'yesterday' | 'custom'
