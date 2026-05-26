@@ -188,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api'
 import { flagUrl } from '@/composables/useFlags'
@@ -371,12 +371,41 @@ function channelClass(ch: string) {
   return 'badge-other'
 }
 
+// Read all filter state from the URL query string (called on mount + keep-alive activate)
 function applyRouteQuery() {
   const q = route.query
-  if (q.source)       filterSource.value   = q.source as string
-  if (q.channel)      filterChannel.value  = q.channel as string
+  if (q.channel)      filterChannel.value  = q.channel      as string
+  if (q.source)       filterSource.value   = q.source       as string
   if (q.utm_campaign) filterCampaign.value = q.utm_campaign as string
+  if (q.session_id)   searchId.value       = q.session_id   as string
+  if (q.order_id)     searchOrderId.value  = q.order_id     as string
+  if (q.min_pages)    minPages.value       = parseInt(q.min_pages as string) || null
+  if (q.orders_only === '1') ordersOnly.value = true
+  if (q.fp_stitched === '1') fpStitched.value = true
+  if (q.page)         page.value           = parseInt(q.page as string) || 1
 }
+
+// Write all filter state back to the URL so the back button restores it
+function buildUrlQuery(): Record<string, string> {
+  const q: Record<string, string> = {}
+  if (page.value > 1)                        q.page         = String(page.value)
+  if (filterChannel.value)                   q.channel      = filterChannel.value
+  if (filterSource.value)                    q.source       = filterSource.value
+  if (filterCampaign.value)                  q.utm_campaign = filterCampaign.value
+  if (searchId.value.trim())                 q.session_id   = searchId.value.trim()
+  if (searchOrderId.value.trim())            q.order_id     = searchOrderId.value.trim()
+  if (minPages.value && minPages.value > 0)  q.min_pages    = String(minPages.value)
+  if (ordersOnly.value)                      q.orders_only  = '1'
+  if (fpStitched.value)                      q.fp_stitched  = '1'
+  return q
+}
+
+// Keep URL in sync with filter state so the back button restores filters
+watch(
+  [page, filterChannel, filterSource, filterCampaign, searchId, searchOrderId, minPages, ordersOnly, fpStitched],
+  () => router.replace({ query: buildUrlQuery() }),
+  { flush: 'post' },
+)
 
 onMounted(() => { applyRouteQuery(); load(); loadStats() })
 // Refresh data when navigating back from session detail (keep-alive restore)
