@@ -246,8 +246,10 @@ async function drainBatch(): Promise<void> {
         [fp, stitchWindowDays],
       );
       if (fpRes.rows.length > 0) {
-        prior = fpRes.rows[0];
-        priorIsRicher = !!(prior.channel && prior.channel !== 'direct' && prior.channel !== '');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row = fpRes.rows[0] as Record<string, any>;
+        prior = row;
+        priorIsRicher = !!(row.channel && row.channel !== 'direct' && row.channel !== '');
       }
     }
 
