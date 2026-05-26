@@ -168,7 +168,8 @@ async function drainBatch(): Promise<void> {
   }
 
   // ── Enrich sessions with order data ─────────────────────────────
-  // Only runs for order_completed events that carry metadata with order_id + value + currency
+  // order_completed  → set order_id + revenue_usd (initial purchase)
+  // ppu_accepted     → add to revenue_usd (post-purchase upsell on same order)
   const orderEvents = deduped.filter(e =>
     e.event_type === 'order_completed' &&
     e.metadata != null &&
@@ -177,7 +178,14 @@ async function drainBatch(): Promise<void> {
     typeof e.metadata.currency === 'string',
   );
 
-  if (orderEvents.length > 0) {
+  const ppuEvents = deduped.filter(e =>
+    e.event_type === 'ppu_accepted' &&
+    e.metadata != null &&
+    typeof e.metadata.value    === 'number' &&
+    typeof e.metadata.currency === 'string',
+  );
+
+  if (orderEvents.length > 0 || ppuEvents.length > 0) {
     const fxKey = process.env.FX_API_KEY?.trim() || null;
     const rates  = fxKey ? await getRates(fxKey) : null;
 
@@ -195,6 +203,23 @@ async function drainBatch(): Promise<void> {
          WHERE session_id = $3
            AND order_id IS NULL`,
         [orderId, revenueUsd, ev.session_id],
+      );
+    }
+
+    for (const ev of ppuEvents) {
+      const meta       = ev.metadata!;
+      const amount     = meta.value as number;
+      const currency   = meta.currency as string;
+      const revenueUsd = rates ? toUsd(amount, currency, rates) : null;
+      if (revenueUsd === null) continue;
+
+      // Add upsell revenue on top of the existing order revenue.
+      // COALESCE handles the rare case where ppu_accepted arrives before order_completed.
+      await pgPool.query(
+        `UPDATE sessions
+         SET revenue_usd = COALESCE(revenue_usd, 0) + $1
+         WHERE session_id = $2`,
+        [revenueUsd, ev.session_id],
       );
     }
   }
