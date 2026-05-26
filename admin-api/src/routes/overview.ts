@@ -112,34 +112,54 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
 
     const sessionIds = sessionsRes.rows.map(r => r.session_id);
 
-    // Count per source — group by source name only (ignore channel) to avoid duplicates
+    const CHANNEL_LABELS: Record<string, string> = {
+      paid_social:      'Paid Social',   paid_search:      'Paid Search',
+      paid_shopping:    'Paid Shopping', paid_other:        'Paid Other',
+      email:            'Email',         sms:               'SMS',
+      organic_search:   'Organic Search', organic_shopping: 'Organic Shopping',
+      organic_social:   'Organic Social', referral:         'Referral',
+      direct:           'Direct',
+    };
+
+    // Count per source
     const sourceCount    = new Map<string, { label: string; count: number }>();
-    const sourceRevenue  = new Map<string, number>(); // revenue_usd sum per source
+    const sourceRevenue  = new Map<string, number>();
+    const sourceOrders   = new Map<string, number>();
     const sessionSrc     = new Map<string, string>(); // session_id → source key
     const sessionCampaign = new Map<string, string>(); // session_id → utm_campaign
+    const sessionChannel  = new Map<string, string>(); // session_id → channel
 
-    // campaign breakdown maps: source → campaign → value
-    const campCount   = new Map<string, Map<string, number>>();
-    const campRevenue = new Map<string, Map<string, number>>();
+    // Nested: source → channel → { count, revenue, orders, campaigns }
+    type CampAgg = { count: number; revenue: number; orders: number };
+    type ChanAgg = { count: number; revenue: number; orders: number; camps: Map<string, CampAgg> };
+    const srcChans = new Map<string, Map<string, ChanAgg>>();
 
     for (const s of sessionsRes.rows) {
-      const key    = s.source || 'direct';
-      const label  = !s.source || s.source === 'direct' ? 'Direct' : s.source;
-      const camp   = (s.utm_campaign || '').trim();
+      const key   = s.source || 'direct';
+      const label = !s.source || s.source === 'direct' ? 'Direct' : s.source;
+      const chan  = (s.channel || 'direct').trim();
+      const camp  = (s.utm_campaign || '').trim();
+
       if (!sourceCount.has(key)) sourceCount.set(key, { label, count: 0 });
       sourceCount.get(key)!.count++;
       sessionSrc.set(s.session_id, key);
       sessionCampaign.set(s.session_id, camp);
+      sessionChannel.set(s.session_id, chan);
+
       if (s.revenue_usd) {
         sourceRevenue.set(key, (sourceRevenue.get(key) ?? 0) + parseFloat(s.revenue_usd));
       }
-      // Campaign counts
-      if (!campCount.has(key))   campCount.set(key,   new Map());
-      if (!campRevenue.has(key)) campRevenue.set(key, new Map());
-      campCount.get(key)!.set(camp, (campCount.get(key)!.get(camp) ?? 0) + 1);
-      if (s.revenue_usd) {
-        campRevenue.get(key)!.set(camp, (campRevenue.get(key)!.get(camp) ?? 0) + parseFloat(s.revenue_usd));
-      }
+
+      // Nested channel → campaign aggregation
+      if (!srcChans.has(key)) srcChans.set(key, new Map());
+      const chanMap = srcChans.get(key)!;
+      if (!chanMap.has(chan)) chanMap.set(chan, { count: 0, revenue: 0, orders: 0, camps: new Map() });
+      const chanAgg = chanMap.get(chan)!;
+      chanAgg.count++;
+      if (s.revenue_usd) chanAgg.revenue += parseFloat(s.revenue_usd);
+      if (!chanAgg.camps.has(camp)) chanAgg.camps.set(camp, { count: 0, revenue: 0, orders: 0 });
+      chanAgg.camps.get(camp)!.count++;
+      if (s.revenue_usd) chanAgg.camps.get(camp)!.revenue += parseFloat(s.revenue_usd);
     }
 
     // Load all events for these sessions
@@ -158,8 +178,6 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const pageCount          = new Map<string, number>();
     const productCount       = new Map<string, number>();
     const postPurchaseCount  = new Map<string, number>();
-    const sourceOrders       = new Map<string, number>(); // orders per source
-    const campOrders         = new Map<string, Map<string, number>>(); // source → campaign → orders
     let cartCount     = 0;
     let checkoutCount = 0;
     let thankyouCount = 0;
@@ -184,11 +202,16 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       if (hadCheckout) checkoutCount++;
       if (hadThankyou) {
         thankyouCount++;
-        const srcKey = sessionSrc.get(sid) ?? 'direct';
+        const srcKey  = sessionSrc.get(sid)     ?? 'direct';
+        const chanKey = sessionChannel.get(sid)  ?? 'direct';
+        const camp    = sessionCampaign.get(sid) ?? '';
         sourceOrders.set(srcKey, (sourceOrders.get(srcKey) ?? 0) + 1);
-        const camp = sessionCampaign.get(sid) ?? '';
-        if (!campOrders.has(srcKey)) campOrders.set(srcKey, new Map());
-        campOrders.get(srcKey)!.set(camp, (campOrders.get(srcKey)!.get(camp) ?? 0) + 1);
+        const chanAgg = srcChans.get(srcKey)?.get(chanKey);
+        if (chanAgg) {
+          chanAgg.orders++;
+          const campAgg = chanAgg.camps.get(camp);
+          if (campAgg) campAgg.orders++;
+        }
       }
     }
 
@@ -218,24 +241,43 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
           const orders   = sourceOrders.get(id) ?? 0;
           const convRate = count > 0 ? Math.round(orders / count * 1000) / 10 : 0;
           const revenue  = Math.round((sourceRevenue.get(id) ?? 0) * 100) / 100;
-          // Campaign breakdown — only include if there are named campaigns
-          const cmap = campCount.get(id);
-          const rmap = campRevenue.get(id);
-          const omap = campOrders.get(id);
-          const allCampaigns = cmap
-            ? Array.from(cmap.entries())
-                .map(([camp, cnt]) => ({
-                  label:   camp || '(not set)',
-                  count:   cnt,
-                  orders:  omap?.get(camp) ?? 0,
-                  revenue: Math.round((rmap?.get(camp) ?? 0) * 100) / 100,
-                  pct:     Math.round((cnt / count) * 100),
-                }))
+
+          // Build channel-level breakdown, each channel carrying its own campaign breakdown
+          const chanMap = srcChans.get(id);
+          const breakdown = chanMap
+            ? Array.from(chanMap.entries())
+                .map(([chan, agg]) => {
+                  const chanConvRate = agg.count > 0 ? Math.round(agg.orders / agg.count * 1000) / 10 : 0;
+                  const allCamps = Array.from(agg.camps.entries())
+                    .map(([camp, c]) => ({
+                      label:   camp || '(not set)',
+                      count:   c.count,
+                      orders:  c.orders,
+                      revenue: Math.round(c.revenue * 100) / 100,
+                      pct:     Math.round((c.count / agg.count) * 100),
+                    }))
+                    .sort((a, b) => b.count - a.count);
+                  // Only include campaign breakdown if there are named campaigns
+                  const campBreakdown = allCamps.some(c => c.label !== '(not set)') ? allCamps : [];
+                  return {
+                    label:    CHANNEL_LABELS[chan] ?? chan,
+                    count:    agg.count,
+                    orders:   agg.orders,
+                    revenue:  Math.round(agg.revenue * 100) / 100,
+                    pct:      Math.round((agg.count / count) * 100),
+                    convRate: chanConvRate,
+                    breakdown: campBreakdown,
+                  };
+                })
                 .sort((a, b) => b.count - a.count)
             : [];
-          // Only expose breakdown if there is at least one named campaign (not just blanks)
-          const breakdown = allCampaigns.some(c => c.label !== '(not set)') ? allCampaigns : [];
-          return { id, label, count, pct: pct(count), orders, convRate, revenue, breakdown };
+
+          // Only expose channel breakdown if the source has more than one channel OR has named campaigns
+          const hasNamedCampaigns = breakdown.some(ch => ch.breakdown && ch.breakdown.length > 0);
+          const hasMultipleChannels = breakdown.length > 1;
+          const finalBreakdown = (hasNamedCampaigns || hasMultipleChannels) ? breakdown : [];
+
+          return { id, label, count, pct: pct(count), orders, convRate, revenue, breakdown: finalBreakdown };
         })
         .sort((a, b) => b.count - a.count),
       landingPages:      toArr(landingCount),

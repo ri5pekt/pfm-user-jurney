@@ -74,61 +74,92 @@
           </div>
         </div>
 
-        <!-- Campaign sub-rows -->
+        <!-- Level 2: Channel sub-rows -->
         <template v-if="expanded.has(item.id) && item.breakdown?.length">
-          <div
-            class="bar-row sub-row"
-            :class="{ 'with-conv': showConversions, 'with-revenue': showConversions && showRevenue }"
-            v-for="sub in visibleBreakdown(item)"
-            :key="sub.label"
-          >
-            <div class="bar-label sub-label">
-              <span class="sub-icon">└</span>
-              <span class="label-text" :title="sub.label">{{ sub.label }}</span>
+          <template v-for="sub in visibleBreakdown(item)" :key="sub.label">
+            <!-- Channel row -->
+            <div
+              class="bar-row sub-row"
+              :class="{ 'with-conv': showConversions, 'with-revenue': showConversions && showRevenue }"
+            >
+              <div class="bar-label sub-label">
+                <button
+                  v-if="sub.breakdown?.length"
+                  class="expand-btn expand-btn-sub"
+                  :class="{ open: expandedSub.has(subKey(item.id, sub.label)) }"
+                  @click.stop="toggleSub(item.id, sub.label)"
+                  :title="expandedSub.has(subKey(item.id, sub.label)) ? 'Collapse campaigns' : 'Expand campaigns'"
+                >▶</button>
+                <span v-else class="expand-placeholder" />
+                <span class="sub-icon">└</span>
+                <span class="label-text" :title="sub.label">{{ sub.label }}</span>
+              </div>
+
+              <div class="bar-track sub-track">
+                <div class="bar-fill sub-fill" :class="barColorClass" :style="{ width: subBarWidth(sub, item) + '%', opacity: 0.65 }" />
+              </div>
+
+              <div class="bar-stat sub-stat" :class="{ 'col-active': sortBy === 'sessions' }">
+                {{ sub.count.toLocaleString() }}
+                <span class="bar-pct">{{ sub.pct }}%</span>
+              </div>
+              <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'orders' }">
+                {{ sub.orders.toLocaleString() }}
+              </div>
+              <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'convRate' }">
+                <span class="bar-pct c-green-soft" v-if="sub.count">{{ sub.convRate ?? Math.round(sub.orders / sub.count * 1000) / 10 }}%</span>
+              </div>
+              <div class="bar-stat sub-stat c-purple" v-if="showConversions && showRevenue" :class="{ 'col-active': sortBy === 'revenue' }">
+                {{ fmtUsd(sub.revenue) }}
+              </div>
             </div>
 
-            <div class="bar-track sub-track">
+            <!-- Level 3: Campaign rows under expanded channel -->
+            <template v-if="expandedSub.has(subKey(item.id, sub.label)) && sub.breakdown?.length">
               <div
-                class="bar-fill sub-fill"
-                :class="barColorClass"
-                :style="{ width: subBarWidth(sub, item) + '%', opacity: 0.65 }"
-              />
-            </div>
+                class="bar-row deep-row"
+                :class="{ 'with-conv': showConversions, 'with-revenue': showConversions && showRevenue }"
+                v-for="camp in visibleCampaigns(item.id, sub)"
+                :key="camp.label"
+              >
+                <div class="bar-label deep-label">
+                  <span class="expand-placeholder" />
+                  <span class="sub-icon deep-icon-shift">└</span>
+                  <span class="label-text" :title="camp.label">{{ camp.label }}</span>
+                </div>
 
-            <div class="bar-stat sub-stat" :class="{ 'col-active': sortBy === 'sessions' }">
-              {{ sub.count.toLocaleString() }}
-              <span class="bar-pct">{{ sub.pct }}%</span>
-            </div>
+                <div class="bar-track sub-track">
+                  <div class="bar-fill sub-fill" :class="barColorClass" :style="{ width: (sub.count ? camp.count / sub.count * 100 : 0) + '%', opacity: 0.4 }" />
+                </div>
 
-            <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'orders' }">
-              {{ sub.orders.toLocaleString() }}
-            </div>
+                <div class="bar-stat sub-stat" :class="{ 'col-active': sortBy === 'sessions' }">
+                  {{ camp.count.toLocaleString() }}
+                  <span class="bar-pct">{{ camp.pct }}%</span>
+                </div>
+                <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'orders' }">
+                  {{ camp.orders.toLocaleString() }}
+                </div>
+                <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'convRate' }">
+                  <span class="bar-pct c-green-soft" v-if="camp.count">{{ Math.round(camp.orders / camp.count * 1000) / 10 }}%</span>
+                </div>
+                <div class="bar-stat sub-stat c-purple" v-if="showConversions && showRevenue" :class="{ 'col-active': sortBy === 'revenue' }">
+                  {{ fmtUsd(camp.revenue) }}
+                </div>
+              </div>
 
-            <div class="bar-stat sub-stat c-green" v-if="showConversions" :class="{ 'col-active': sortBy === 'convRate' }">
-              <span class="bar-pct c-green-soft" v-if="sub.count">
-                {{ Math.round(sub.orders / sub.count * 1000) / 10 }}%
-              </span>
-            </div>
-
-            <div class="bar-stat sub-stat c-purple" v-if="showConversions && showRevenue" :class="{ 'col-active': sortBy === 'revenue' }">
-              {{ fmtUsd(sub.revenue) }}
-            </div>
-          </div>
-
-          <!-- Show all / collapse toggle -->
-          <div
-            v-if="item.breakdown.length > BREAKDOWN_DEFAULT"
-            class="show-more-row"
-          >
-            <button class="show-more-btn" @click="toggleShowAll(item.id)">
-              <template v-if="showAllBreakdown.has(item.id)">
-                ▲ Show top {{ BREAKDOWN_DEFAULT }}
-              </template>
-              <template v-else>
-                ▼ Show all {{ item.breakdown.length }} campaigns
-              </template>
-            </button>
-          </div>
+              <!-- Show all / collapse campaigns within this channel -->
+              <div v-if="sub.breakdown.length > BREAKDOWN_DEFAULT" class="show-more-row show-more-deep">
+                <button class="show-more-btn" @click="toggleShowAllSub(item.id, sub.label)">
+                  <template v-if="showAllSub.has(subKey(item.id, sub.label))">
+                    ▲ Show top {{ BREAKDOWN_DEFAULT }}
+                  </template>
+                  <template v-else>
+                    ▼ Show all {{ sub.breakdown.length }} campaigns
+                  </template>
+                </button>
+              </div>
+            </template>
+          </template>
         </template>
       </template>
     </div>
@@ -151,9 +182,10 @@ const props = defineProps<{
 const BREAKDOWN_DEFAULT = 10  // campaigns shown before "show all" button
 
 type SortKey = 'sessions' | 'orders' | 'convRate' | 'revenue'
-const sortBy   = ref<SortKey>('sessions')
-const expanded = ref<Set<string>>(new Set())
-const showAllBreakdown = ref<Set<string>>(new Set())
+const sortBy      = ref<SortKey>('sessions')
+const expanded    = ref<Set<string>>(new Set())
+const expandedSub = ref<Set<string>>(new Set())
+const showAllSub  = ref<Set<string>>(new Set())
 
 function toggle(id: string) {
   const s = new Set(expanded.value)
@@ -162,16 +194,30 @@ function toggle(id: string) {
   expanded.value = s
 }
 
-function toggleShowAll(id: string) {
-  const s = new Set(showAllBreakdown.value)
-  if (s.has(id)) s.delete(id)
-  else s.add(id)
-  showAllBreakdown.value = s
+function subKey(parentId: string, subLabel: string) {
+  return `${parentId}::${subLabel}`
 }
 
+function toggleSub(parentId: string, subLabel: string) {
+  const key = subKey(parentId, subLabel)
+  const s   = new Set(expandedSub.value)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
+  expandedSub.value = s
+}
+
+function toggleShowAllSub(parentId: string, subLabel: string) {
+  const key = subKey(parentId, subLabel)
+  const s   = new Set(showAllSub.value)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
+  showAllSub.value = s
+}
+
+// Level 2: channels — show all (typically ≤ 5), just sort
 function visibleBreakdown(item: FunnelItem) {
   if (!item.breakdown) return []
-  const sorted = [...item.breakdown].sort((a, b) => {
+  return [...item.breakdown].sort((a, b) => {
     if (sortBy.value === 'orders')   return b.orders  - a.orders
     if (sortBy.value === 'revenue')  return b.revenue - a.revenue
     if (sortBy.value === 'convRate') {
@@ -181,7 +227,23 @@ function visibleBreakdown(item: FunnelItem) {
     }
     return b.count - a.count
   })
-  return showAllBreakdown.value.has(item.id) ? sorted : sorted.slice(0, BREAKDOWN_DEFAULT)
+}
+
+// Level 3: campaigns within a channel — sorted + capped unless show-all toggled
+function visibleCampaigns(parentId: string, sub: BreakdownItem) {
+  if (!sub.breakdown) return []
+  const sorted = [...sub.breakdown].sort((a, b) => {
+    if (sortBy.value === 'orders')   return b.orders  - a.orders
+    if (sortBy.value === 'revenue')  return b.revenue - a.revenue
+    if (sortBy.value === 'convRate') {
+      const ra = a.count ? a.orders / a.count : 0
+      const rb = b.count ? b.orders / b.count : 0
+      return rb - ra
+    }
+    return b.count - a.count
+  })
+  const key = subKey(parentId, sub.label)
+  return showAllSub.value.has(key) ? sorted : sorted.slice(0, BREAKDOWN_DEFAULT)
 }
 
 const topN = computed(() => props.topN ?? 10)
@@ -346,6 +408,7 @@ function fmtUsd(v: number): string {
   margin-top: 0.1rem;
   margin-bottom: 0.2rem;
 }
+.show-more-deep { padding-left: 52px; }
 .show-more-btn {
   background: none; border: none; cursor: pointer; padding: 0;
   font-size: 0.67rem; color: var(--soft);
@@ -364,6 +427,12 @@ function fmtUsd(v: number): string {
   opacity: 0.5;
   text-align: center;
 }
+
+/* Level 3 — campaign rows under an expanded channel */
+.deep-row { margin-top: -0.1rem; margin-bottom: 0.05rem; }
+.deep-label { padding-left: 2px; }
+.deep-icon-shift { opacity: 0.35; }
+.expand-btn-sub { opacity: 0.8; }
 
 .sub-track {
   height: 5px;

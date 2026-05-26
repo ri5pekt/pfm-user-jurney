@@ -1,9 +1,11 @@
 export interface BreakdownItem {
-  label:   string
-  count:   number
-  orders:  number
-  revenue: number
-  pct:     number  // % of parent source sessions
+  label:     string
+  count:     number
+  orders:    number
+  revenue:   number
+  pct:       number       // % of parent sessions
+  convRate?: number       // orders / count * 100 — present on channel items
+  breakdown?: BreakdownItem[]  // campaigns nested under a channel item
 }
 
 export interface FunnelItem {
