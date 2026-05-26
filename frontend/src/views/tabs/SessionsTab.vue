@@ -18,6 +18,16 @@
           />
           <button v-if="searchId" class="search-clear" @click="clearSearch">✕</button>
         </div>
+        <div class="search-wrap">
+          <input
+            v-model="searchOrderId"
+            class="search-input"
+            placeholder="Search order ID…"
+            @keydown.enter="doSearch"
+            @input="onOrderIdInput"
+          />
+          <button v-if="searchOrderId" class="search-clear" @click="clearOrderId">✕</button>
+        </div>
         <select v-model="filterChannel" @change="goTo(1)" class="filter-select">
           <option value="">All channels</option>
           <option value="paid_search">Paid Search</option>
@@ -206,6 +216,7 @@ const live          = ref(false)
 let   liveTimer     = 0
 const filterChannel = ref('')
 const searchId      = ref('')
+const searchOrderId = ref('')
 const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
 const ordersOnly    = ref(false)
@@ -229,6 +240,7 @@ async function load() {
     const params: Record<string, unknown> = { page: page.value, limit }
     if (filterChannel.value) params.channel = filterChannel.value
     if (searchId.value.trim()) params.session_id = searchId.value.trim()
+    if (searchOrderId.value.trim()) params.order_id = searchOrderId.value.trim()
     if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
     if (ordersOnly.value) params.orders_only = '1'
     if (fpStitched.value) params.fp_stitched = '1'
@@ -278,6 +290,16 @@ function onSearchInput() {
 
 function clearSearch() {
   searchId.value = ''
+  goTo(1)
+}
+
+function onOrderIdInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => goTo(1), 400)
+}
+
+function clearOrderId() {
+  searchOrderId.value = ''
   goTo(1)
 }
 
