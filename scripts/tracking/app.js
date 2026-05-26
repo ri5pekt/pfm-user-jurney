@@ -1,6 +1,6 @@
 /* PFM User Journey Tracker — drop into WordPress <head> */
 (function () {
-  var K = 'pfm_sid', E = 'pfm_sid_exp', TTL = 864e5, URL = 'https://uj.pfm-qa.com/p';
+  var K = 'pfm_sid', E = 'pfm_sid_exp', TTL = 2592e5, URL = 'https://uj.pfm-qa.com/p';
 
   function uid() {
     return crypto.randomUUID ? crypto.randomUUID()
