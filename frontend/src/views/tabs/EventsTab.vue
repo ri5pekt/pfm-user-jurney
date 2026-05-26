@@ -18,6 +18,19 @@
       </div>
     </div>
 
+    <!-- ── Event type filter pills ─────────────────────────────── -->
+    <div class="type-pills">
+      <button
+        v-for="t in EVENT_TYPES"
+        :key="t.value"
+        class="type-pill"
+        :class="[t.cls, { active: filterType === t.value }]"
+        @click="toggleType(t.value)"
+      >
+        {{ t.label }}
+      </button>
+    </div>
+
     <!-- ── Table ──────────────────────────────────────────────── -->
     <div class="table-wrap">
       <table>
@@ -73,25 +86,40 @@ interface Event {
   timestamp:   string
 }
 
-const events    = ref<Event[]>([])
-const total     = ref(0)
-const page      = ref(1)
-const limit     = 20
-const loading   = ref(false)
-const live      = ref(false)
-let   liveTimer = 0
+const EVENT_TYPES = [
+  { value: 'page_view',       label: 'Page View',       cls: 'pill-pageview' },
+  { value: 'order_completed', label: 'Order Completed', cls: 'pill-order'    },
+  { value: 'ppu_accepted',    label: 'PPU Accepted',    cls: 'pill-ppu'      },
+  { value: 'fp_collected',    label: 'FP Collected',    cls: 'pill-fp'       },
+]
+
+const events     = ref<Event[]>([])
+const total      = ref(0)
+const page       = ref(1)
+const limit      = 20
+const loading    = ref(false)
+const live       = ref(false)
+const filterType = ref('')
+let   liveTimer  = 0
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 
 async function load() {
   loading.value = true
   try {
-    const { data } = await api.get('/events', { params: { page: page.value, limit } })
+    const params: Record<string, unknown> = { page: page.value, limit }
+    if (filterType.value) params.event_type = filterType.value
+    const { data } = await api.get('/events', { params })
     events.value = data.events
     total.value  = data.total
   } finally {
     loading.value = false
   }
+}
+
+function toggleType(type: string) {
+  filterType.value = filterType.value === type ? '' : type
+  goTo(1)
 }
 
 function goTo(n: number) {
@@ -229,6 +257,30 @@ h2 { font-size: 1rem; font-weight: 600; }
 /* Spin */
 .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Event type pills */
+.type-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+.type-pill {
+  padding: .28rem .7rem;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-size: .78rem; font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+  color: var(--soft);
+}
+.type-pill:hover  { border-color: var(--accent); color: var(--accent); }
+.type-pill.active { background: #f0fdfb; border-color: var(--accent); color: var(--accent); }
+
+.pill-pageview.active { background: #f8fafc; border-color: var(--soft); color: var(--text); }
+.pill-pageview:hover  { border-color: var(--soft); color: var(--text); }
+.pill-order.active    { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
+.pill-order:hover     { border-color: #16a34a; color: #16a34a; }
+.pill-ppu.active      { background: #fdf4ff; border-color: #9333ea; color: #9333ea; }
+.pill-ppu:hover       { border-color: #9333ea; color: #9333ea; }
+.pill-fp.active       { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
+.pill-fp:hover        { border-color: #2563eb; color: #2563eb; }
 
 /* Table */
 .table-wrap {
