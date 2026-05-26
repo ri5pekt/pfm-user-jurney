@@ -239,7 +239,9 @@ function urlPath(url: string) {
   } catch { return url.slice(0, 60) }
 }
 
-// Deduplicate A/B redirect pairs: same pathname within 5s → keep the later one
+// Deduplicate A/B redirect pairs: same pathname within 5s → keep the later one.
+// Only replace if the stored event is a plain page_view — never overwrite a meaningful
+// event (order_completed, fp_collected, etc.) with a subsequent page_view on the same URL.
 const displayEvents = computed(() => {
   const DEDUP_MS = 5000
   const result: EventRow[] = []
@@ -250,8 +252,13 @@ const displayEvents = computed(() => {
     try { path = new URL(ev.page_url).pathname } catch { path = ev.page_url }
     const timeMs = new Date(ev.timestamp).getTime()
 
-    if (prev && prev.path === path && timeMs - prev.timeMs <= DEDUP_MS) {
-      result[prev.idx] = ev          // replace earlier event with later (variant) URL
+    if (
+      prev &&
+      prev.path === path &&
+      timeMs - prev.timeMs <= DEDUP_MS &&
+      result[prev.idx].event_type === 'page_view'
+    ) {
+      result[prev.idx] = ev          // replace earlier page_view with later (variant) URL
       prev = { path, timeMs, idx: prev.idx }
     } else {
       prev = { path, timeMs, idx: result.length }
