@@ -27,6 +27,26 @@ function getBasePath(url: string): string {
 }
 
 /**
+ * Returns true if two public IPs share the same /16 subnet (first two octets).
+ * Returns true when either IP is missing, private, or IPv6 — we only block merges
+ * when we are confident the devices are on entirely different public networks.
+ * Prevents fingerprint collisions (e.g. identical iOS Safari hashes) from
+ * merging sessions belonging to completely different people.
+ */
+function sameIpNetwork(ip1: string | null | undefined, ip2: string | null | undefined): boolean {
+  if (!ip1 || !ip2) return true;
+  const p1 = ip1.split('.');
+  const p2 = ip2.split('.');
+  if (p1.length !== 4 || p2.length !== 4) return true; // IPv6 or malformed → allow
+  const isPrivate = (p: string[]) =>
+    p[0] === '10' || p[0] === '127' ||
+    (p[0] === '192' && p[1] === '168') ||
+    (p[0] === '172' && Number(p[1]) >= 16 && Number(p[1]) <= 31);
+  if (isPrivate(p1) || isPrivate(p2)) return true; // private → can't tell → allow
+  return p1[0] === p2[0] && p1[1] === p2[1];
+}
+
+/**
  * Within a sorted (ascending) event batch, collapse same-session + same-pathname
  * events that arrive within DEDUP_WINDOW_MS of each other, keeping the LATER one.
  * This handles A/B-test redirects (e.g. /product/x/ → /product/x/?uatc=v3).
@@ -251,7 +271,7 @@ async function drainBatch(): Promise<void> {
     // Read current session state (post-upsert in this batch)
     const sessionRes = await pgPool.query(
       `SELECT channel, page_count, last_seen, source, medium, placement,
-              campaign_id, utm_source, utm_medium, utm_campaign, attribution_method
+              campaign_id, utm_source, utm_medium, utm_campaign, attribution_method, ip
        FROM sessions WHERE session_id = $1`,
       [ev.session_id],
     );
@@ -274,7 +294,14 @@ async function drainBatch(): Promise<void> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const row = fpRes.rows[0] as Record<string, any>;
         prior = row;
-        priorIsRicher = !!(row.channel && row.channel !== 'direct' && row.channel !== '');
+        // Only merge if the prior session's IP is on the same /16 subnet.
+        // This prevents iOS fingerprint collisions (Apple limits browser entropy,
+        // causing many different users to produce identical hashes) from merging
+        // two completely different people's sessions.
+        priorIsRicher = !!(
+          row.channel && row.channel !== 'direct' && row.channel !== '' &&
+          sameIpNetwork(sess.ip, row.ip)
+        );
       }
     }
 
@@ -332,12 +359,13 @@ async function drainBatch(): Promise<void> {
       await pgPool.query(
         `INSERT INTO fp_sessions
            (fingerprint, session_id, source, medium, channel, placement, campaign_id,
-            utm_source, utm_medium, utm_campaign, attribution_method)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            utm_source, utm_medium, utm_campaign, attribution_method, ip)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          ON CONFLICT (fingerprint) DO UPDATE SET
            session_id    = EXCLUDED.session_id,
            last_seen     = NOW(),
            session_count = fp_sessions.session_count + 1,
+           ip            = COALESCE(fp_sessions.ip, EXCLUDED.ip),
            source        = CASE WHEN EXCLUDED.channel <> 'direct' AND EXCLUDED.channel <> ''
                                 THEN EXCLUDED.source        ELSE fp_sessions.source        END,
            medium        = CASE WHEN EXCLUDED.channel <> 'direct' AND EXCLUDED.channel <> ''
@@ -363,6 +391,7 @@ async function drainBatch(): Promise<void> {
           prior.placement, prior.campaign_id,
           prior.utm_source, prior.utm_medium, prior.utm_campaign,
           prior.attribution_method,
+          prior.ip ?? null,
         ],
       );
     } else {
@@ -370,12 +399,13 @@ async function drainBatch(): Promise<void> {
       await pgPool.query(
         `INSERT INTO fp_sessions
            (fingerprint, session_id, source, medium, channel, placement, campaign_id,
-            utm_source, utm_medium, utm_campaign, attribution_method)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            utm_source, utm_medium, utm_campaign, attribution_method, ip)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          ON CONFLICT (fingerprint) DO UPDATE SET
            session_id    = EXCLUDED.session_id,
            last_seen     = NOW(),
            session_count = fp_sessions.session_count + 1,
+           ip            = COALESCE(fp_sessions.ip, EXCLUDED.ip),
            source        = CASE WHEN EXCLUDED.channel <> 'direct' AND EXCLUDED.channel <> ''
                                 THEN EXCLUDED.source        ELSE fp_sessions.source        END,
            medium        = CASE WHEN EXCLUDED.channel <> 'direct' AND EXCLUDED.channel <> ''
@@ -401,6 +431,7 @@ async function drainBatch(): Promise<void> {
           sess.placement, sess.campaign_id,
           sess.utm_source, sess.utm_medium, sess.utm_campaign,
           sess.attribution_method || 'direct',
+          sess.ip ?? null,
         ],
       );
     }
