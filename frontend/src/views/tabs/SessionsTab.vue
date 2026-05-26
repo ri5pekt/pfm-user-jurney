@@ -99,6 +99,15 @@
       <button v-if="filtersActive" class="fp-clear" @click="clearFilters">Clear filters</button>
     </div>
 
+    <!-- ── Active source/channel/campaign chips ──────────────── -->
+    <div v-if="sourceChips.length" class="source-chips">
+      <span class="chips-label">Filtered by:</span>
+      <span v-for="chip in sourceChips" :key="chip.label" class="source-chip">
+        {{ chip.label }}
+        <button class="chip-clear" @click="chip.clear">✕</button>
+      </span>
+    </div>
+
     <!-- ── Stats bar ──────────────────────────────────────────── -->
     <div class="stats-bar" v-if="stats.length">
       <div
@@ -180,7 +189,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import api from '@/api'
 import { flagUrl } from '@/composables/useFlags'
 
@@ -206,6 +215,7 @@ interface Session {
 interface ChannelStat { channel: string; count: string }
 
 const router        = useRouter()
+const route         = useRoute()
 const sessions      = ref<Session[]>([])
 const stats         = ref<ChannelStat[]>([])
 const total         = ref(0)
@@ -214,7 +224,9 @@ const limit         = 20
 const loading       = ref(false)
 const live          = ref(false)
 let   liveTimer     = 0
-const filterChannel = ref('')
+const filterChannel  = ref('')
+const filterSource   = ref('')
+const filterCampaign = ref('')
 const searchId      = ref('')
 const searchOrderId = ref('')
 const showFilters   = ref(true)
@@ -225,7 +237,9 @@ const fpStitched    = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
-const filtersActive   = computed(() => (minPages.value !== null && minPages.value > 0) || ordersOnly.value || fpStitched.value)
+const filtersActive   = computed(() =>
+  (minPages.value !== null && minPages.value > 0) || ordersOnly.value || fpStitched.value
+)
 const activeFilterCount = computed(() => {
   let n = 0
   if (minPages.value && minPages.value > 0) n++
@@ -233,12 +247,22 @@ const activeFilterCount = computed(() => {
   if (fpStitched.value) n++
   return n
 })
+// Active traffic-source chips (from Overview navigation)
+const sourceChips = computed(() => {
+  const chips: { label: string; clear: () => void }[] = []
+  if (filterSource.value)   chips.push({ label: filterSource.value,   clear: () => { filterSource.value = '';   goTo(1) } })
+  if (filterChannel.value)  chips.push({ label: channelLabel(filterChannel.value), clear: () => { filterChannel.value = ''; goTo(1) } })
+  if (filterCampaign.value) chips.push({ label: filterCampaign.value, clear: () => { filterCampaign.value = ''; goTo(1) } })
+  return chips
+})
 
 async function load() {
   loading.value = true
   try {
     const params: Record<string, unknown> = { page: page.value, limit }
-    if (filterChannel.value) params.channel = filterChannel.value
+    if (filterChannel.value)  params.channel      = filterChannel.value
+    if (filterSource.value)   params.source        = filterSource.value
+    if (filterCampaign.value) params.utm_campaign  = filterCampaign.value
     if (searchId.value.trim()) params.session_id = searchId.value.trim()
     if (searchOrderId.value.trim()) params.order_id = searchOrderId.value.trim()
     if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
@@ -347,9 +371,16 @@ function channelClass(ch: string) {
   return 'badge-other'
 }
 
-onMounted(() => { load(); loadStats() })
+function applyRouteQuery() {
+  const q = route.query
+  if (q.source)       filterSource.value   = q.source as string
+  if (q.channel)      filterChannel.value  = q.channel as string
+  if (q.utm_campaign) filterCampaign.value = q.utm_campaign as string
+}
+
+onMounted(() => { applyRouteQuery(); load(); loadStats() })
 // Refresh data when navigating back from session detail (keep-alive restore)
-onActivated(() => { load(); loadStats() })
+onActivated(() => { applyRouteQuery(); load(); loadStats() })
 onUnmounted(() => clearInterval(liveTimer))
 </script>
 
@@ -526,6 +557,22 @@ td { padding: .65rem 1rem; vertical-align: middle; }
 .badge-organic { background: #f0fdf4; color: #16a34a; }
 .badge-direct  { background: #f8fafc; color: var(--soft); }
 .badge-other   { background: #fff7ed; color: #c2410c; }
+
+/* Source filter chips */
+.source-chips { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.chips-label { font-size: .72rem; color: var(--soft); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.source-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .2rem .55rem; border-radius: 20px;
+  background: #eff6ff; border: 1.5px solid #bfdbfe;
+  color: #1d4ed8; font-size: .78rem; font-weight: 600;
+}
+.chip-clear {
+  background: none; border: none; cursor: pointer;
+  color: #93c5fd; font-size: .65rem; padding: 0; line-height: 1;
+  transition: color .15s;
+}
+.chip-clear:hover { color: #1d4ed8; }
 
 /* Pagination */
 .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; }

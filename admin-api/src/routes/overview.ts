@@ -261,6 +261,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
                   const campBreakdown = allCamps.some(c => c.label !== '(not set)') ? allCamps : [];
                   return {
                     label:    CHANNEL_LABELS[chan] ?? chan,
+                    key:      chan,   // raw DB value for session filtering
                     count:    agg.count,
                     orders:   agg.orders,
                     revenue:  Math.round(agg.revenue * 100) / 100,

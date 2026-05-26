@@ -3,15 +3,16 @@ import { pgPool } from '../lib/postgres';
 
 export const sessionsRouter = Router();
 
-// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&min_pages=3&orders_only=1&fp_stitched=1&order_id=3903895
+// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&utm_campaign=GA0PVYXNNA&min_pages=3&orders_only=1&fp_stitched=1&order_id=3903895
 sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const page    = Math.max(1, parseInt(req.query.page   as string) || 1);
   const limit   = Math.min(100, parseInt(req.query.limit as string) || 20);
   const offset  = (page - 1) * limit;
-  const channel      = (req.query.channel    as string) || '';
-  const source       = (req.query.source     as string) || '';
-  const session_id   = (req.query.session_id as string) || '';
-  const order_id     = (req.query.order_id   as string) || '';
+  const channel      = (req.query.channel      as string) || '';
+  const source       = (req.query.source       as string) || '';
+  const utm_campaign = (req.query.utm_campaign as string) || '';
+  const session_id   = (req.query.session_id   as string) || '';
+  const order_id     = (req.query.order_id     as string) || '';
   const min_pages    = parseInt(req.query.min_pages  as string) || 0;
   const orders_only  = req.query.orders_only  === '1';
   const fp_stitched  = req.query.fp_stitched  === '1';
@@ -19,8 +20,15 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const conditions: string[] = [];
   const params: unknown[]    = [];
 
-  if (channel)    { params.push(channel);    conditions.push(`channel    = $${params.length}`); }
-  if (source)     { params.push(source);     conditions.push(`source     = $${params.length}`); }
+  if (channel)      { params.push(channel);      conditions.push(`channel      = $${params.length}`); }
+  if (source)       { params.push(source);       conditions.push(`source       = $${params.length}`); }
+  if (utm_campaign) {
+    if (utm_campaign === '(not set)') {
+      conditions.push(`(utm_campaign IS NULL OR utm_campaign = '')`);
+    } else {
+      params.push(utm_campaign); conditions.push(`utm_campaign = $${params.length}`);
+    }
+  }
   if (session_id) { params.push(`%${session_id}%`); conditions.push(`session_id ILIKE $${params.length}`); }
   if (order_id)   { params.push(`%${order_id}%`);   conditions.push(`order_id   ILIKE $${params.length}`); }
   if (min_pages > 0) { params.push(min_pages); conditions.push(`page_count >= $${params.length}`); }

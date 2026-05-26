@@ -68,6 +68,7 @@
         :top-n="20"
         :show-conversions="true"
         :show-revenue="true"
+        :navigable="true"
       />
 
       <BarChartWidget

@@ -1,5 +1,6 @@
 export interface BreakdownItem {
   label:     string
+  key?:      string       // raw DB value (e.g. 'email', 'paid_social') — used for session filtering
   count:     number
   orders:    number
   revenue:   number

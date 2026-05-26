@@ -44,7 +44,12 @@
               :title="expanded.has(item.id) ? 'Collapse campaigns' : 'Expand campaigns'"
             >▶</button>
             <span v-else class="expand-placeholder" />
-            <span class="label-text" :title="item.label">{{ item.label }}</span>
+            <span
+              class="label-text"
+              :class="{ 'label-link': navigable }"
+              :title="item.label"
+              @click.stop="navigable && goToSessions({ source: item.id })"
+            >{{ item.label }}</span>
           </div>
 
           <!-- Bar track -->
@@ -92,7 +97,12 @@
                 >▶</button>
                 <span v-else class="expand-placeholder" />
                 <span class="sub-icon">└</span>
-                <span class="label-text" :title="sub.label">{{ sub.label }}</span>
+                <span
+                  class="label-text"
+                  :class="{ 'label-link': navigable }"
+                  :title="sub.label"
+                  @click.stop="navigable && goToSessions({ source: item.id, channel: sub.key ?? sub.label })"
+                >{{ sub.label }}</span>
               </div>
 
               <div class="bar-track sub-track">
@@ -125,7 +135,12 @@
                 <div class="bar-label deep-label">
                   <span class="expand-placeholder" />
                   <span class="sub-icon deep-icon-shift">└</span>
-                  <span class="label-text" :title="camp.label">{{ camp.label }}</span>
+                  <span
+                    class="label-text"
+                    :class="{ 'label-link': navigable }"
+                    :title="camp.label"
+                    @click.stop="navigable && goToSessions({ source: item.id, channel: sub.key ?? sub.label, utm_campaign: camp.label })"
+                  >{{ camp.label }}</span>
                 </div>
 
                 <div class="bar-track sub-track">
@@ -168,6 +183,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FunnelItem, BreakdownItem } from './types'
 
 const props = defineProps<{
@@ -177,7 +193,14 @@ const props = defineProps<{
   topN?:            number
   showConversions?: boolean
   showRevenue?:     boolean
+  navigable?:       boolean   // when true, label clicks link to Sessions with filters applied
 }>()
+
+const router = useRouter()
+
+function goToSessions(filters: Record<string, string>) {
+  router.push({ path: '/sessions', query: filters })
+}
 
 const BREAKDOWN_DEFAULT = 10  // campaigns shown before "show all" button
 
@@ -346,6 +369,11 @@ function fmtUsd(v: number): string {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex: 1; min-width: 0;
 }
+.label-link {
+  cursor: pointer;
+  transition: color .15s;
+}
+.label-link:hover { color: var(--accent); text-decoration: underline; }
 
 /* ── expand toggle ─────────────────────────────────────── */
 .expand-btn {
