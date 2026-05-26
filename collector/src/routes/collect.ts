@@ -61,13 +61,24 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isNoisyUrl(page_url)) return;
 
+  // Redirect merged sessions — if this session_id was absorbed into another
+  // via fingerprint merge, transparently reroute to the canonical session_id.
+  // Checked after bot/noise filters so dropped events don't burn a Redis lookup.
+  let effective_session_id = session_id;
+  try {
+    const canonical = await redisClient.get(`merged:${session_id}`);
+    if (canonical) effective_session_id = canonical;
+  } catch {
+    // Redis error — proceed with original session_id
+  }
+
   // For order_completed: dedup by order_id — same order within 24h is silently dropped
   if (event_type === 'order_completed') {
     const orderId = typeof metadata?.order_id === 'string' || typeof metadata?.order_id === 'number'
       ? String(metadata.order_id).trim()
       : '';
     if (orderId) {
-      const orderKey = `order:${session_id}:${orderId}`;
+      const orderKey = `order:${effective_session_id}:${orderId}`;
       try {
         const seen = await redisClient.get(orderKey);
         if (seen) return; // duplicate order — drop
@@ -82,7 +93,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (event_type === 'page_view') {
     let pathname = page_url;
     try { pathname = new URL(page_url).pathname; } catch { /* keep raw url */ }
-    const dedupKey = `dedup:${session_id}`;
+    const dedupKey = `dedup:${effective_session_id}`;
     try {
       const lastPath = await redisClient.get(dedupKey);
       if (lastPath === pathname) return; // duplicate within TTL window — drop
@@ -95,7 +106,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   const ip = getClientIp(req);
 
   const event = JSON.stringify({
-    session_id,
+    session_id: effective_session_id,
     event_type,
     page_url,
     referrer,

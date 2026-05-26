@@ -3,16 +3,17 @@ import { pgPool } from '../lib/postgres';
 
 export const sessionsRouter = Router();
 
-// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&min_pages=3&orders_only=1
+// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&min_pages=3&orders_only=1&fp_stitched=1
 sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const page    = Math.max(1, parseInt(req.query.page   as string) || 1);
   const limit   = Math.min(100, parseInt(req.query.limit as string) || 20);
   const offset  = (page - 1) * limit;
-  const channel    = (req.query.channel    as string) || '';
-  const source     = (req.query.source     as string) || '';
-  const session_id = (req.query.session_id as string) || '';
-  const min_pages  = parseInt(req.query.min_pages  as string) || 0;
-  const orders_only = req.query.orders_only === '1';
+  const channel      = (req.query.channel    as string) || '';
+  const source       = (req.query.source     as string) || '';
+  const session_id   = (req.query.session_id as string) || '';
+  const min_pages    = parseInt(req.query.min_pages  as string) || 0;
+  const orders_only  = req.query.orders_only  === '1';
+  const fp_stitched  = req.query.fp_stitched  === '1';
 
   const conditions: string[] = [];
   const params: unknown[]    = [];
@@ -23,6 +24,9 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   if (min_pages > 0) { params.push(min_pages); conditions.push(`page_count >= $${params.length}`); }
   if (orders_only) {
     conditions.push(`session_id IN (SELECT DISTINCT session_id FROM events WHERE page_url LIKE '%/thank-you-order%')`);
+  }
+  if (fp_stitched) {
+    conditions.push(`fingerprint_stitched = true`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -36,7 +40,8 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
             source, medium, channel, placement, campaign_id,
             utm_source, utm_medium, utm_campaign, page_count,
             country, state_name, city,
-            order_id, revenue_usd
+            order_id, revenue_usd,
+            attribution_method, fingerprint_stitched
      FROM   sessions ${where}
      ORDER  BY first_seen DESC
      LIMIT  $${params.length - 1} OFFSET $${params.length}`,

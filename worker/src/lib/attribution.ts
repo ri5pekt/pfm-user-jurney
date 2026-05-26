@@ -1,12 +1,13 @@
 export interface Attribution {
-  source:       string;
-  medium:       string;
-  channel:      string;
-  placement:    string;
-  campaign_id:  string;
-  utm_source:   string;
-  utm_medium:   string;
-  utm_campaign: string;
+  source:             string;
+  medium:             string;
+  channel:            string;
+  placement:          string;
+  campaign_id:        string;
+  utm_source:         string;
+  utm_medium:         string;
+  utm_campaign:       string;
+  attribution_method: 'utm' | 'click_id' | 'referrer' | 'direct';
 }
 
 const PLACEMENT_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   const attr: Attribution = {
     source: '', medium: '', channel: '', placement: '',
     campaign_id: '', utm_source: '', utm_medium: '', utm_campaign: '',
+    attribution_method: 'direct',
   };
 
   let params: URLSearchParams;
@@ -100,11 +102,13 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
         attr.source  = 'YouTube Ads';
         attr.medium  = 'paid_video';
         attr.channel = 'paid_video';
+        attr.attribution_method = 'click_id';
         return attr;
       }
       attr.source  = 'Google Ads';
       attr.medium  = 'cpc';
       attr.channel = isShopping ? 'paid_shopping' : 'paid_search';
+      attr.attribution_method = 'click_id';
       return attr;
     }
 
@@ -117,6 +121,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       else                        { attr.source = 'Facebook';         }
       attr.medium  = 'paid_social';
       attr.channel = 'paid_social';
+      attr.attribution_method = 'click_id';
       return attr;
     }
 
@@ -124,6 +129,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Bing Ads';
       attr.medium  = 'cpc';
       attr.channel = 'paid_search';
+      attr.attribution_method = 'click_id';
       return attr;
     }
     // Unknown nbt network — fall through to other checks below
@@ -139,11 +145,13 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'YouTube Ads';
       attr.medium  = 'paid_video';
       attr.channel = 'paid_video';
+      attr.attribution_method = 'click_id';
       return attr;
     }
     attr.source  = 'Google Ads';
     attr.medium  = 'cpc';
     attr.channel = adtype.startsWith('pla') ? 'paid_shopping' : 'paid_search';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -161,12 +169,14 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'YouTube Ads';
       attr.medium  = 'paid_video';
       attr.channel = 'paid_video';
+      attr.attribution_method = 'click_id';
       return attr;
     }
     const adtype = params.get('nb_adtype') || params.get('utm_medium') || '';
     attr.source      = 'Google Ads';
     attr.medium      = 'cpc';
     attr.channel     = adtype.includes('pla') || adtype.includes('shopping') ? 'paid_shopping' : 'paid_search';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -175,6 +185,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Bing Ads';
     attr.medium  = 'cpc';
     attr.channel = 'paid_search';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -187,6 +198,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Bing Ads';
     attr.medium  = 'cpc';
     attr.channel = 'paid_search';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -195,6 +207,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Google Shopping';
     attr.medium  = 'organic';
     attr.channel = 'organic_shopping';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -210,6 +223,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     if (params.has('mtke') && !attr.utm_campaign) {
       attr.utm_campaign = 'Transactional';
     }
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -218,6 +232,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Beehiiv';
     attr.medium  = 'email';
     attr.channel = 'email';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -226,6 +241,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Applov';
     attr.medium  = 'paid';
     attr.channel = 'paid_other';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -234,6 +250,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'AdsSupply';
     attr.medium  = 'paid';
     attr.channel = 'paid_other';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -242,6 +259,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Snapchat';
     attr.medium  = 'paid_social';
     attr.channel = 'paid_social';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -250,6 +268,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'TikTok';
     attr.medium  = 'paid_social';
     attr.channel = 'paid_social';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -260,6 +279,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.channel   = 'paid_social';
     const raw      = params.get('nb_placement') || '';
     attr.placement = PLACEMENT_LABELS[raw] || raw;
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -271,6 +291,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Facebook';
     attr.medium  = 'paid_social';
     attr.channel = 'paid_social';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -280,6 +301,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Atwave';
     attr.medium  = params.get('utm_medium') || 'paid';
     attr.channel = 'paid_other';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -294,6 +316,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Klaviyo';
     attr.medium  = 'sms';
     attr.channel = 'sms';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -302,6 +325,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = 'Checkmate';
     attr.medium  = 'referral';
     attr.channel = 'referral';
+    attr.attribution_method = 'click_id';
     return attr;
   }
 
@@ -315,6 +339,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Facebook';
       attr.medium  = 'paid_social';
       attr.channel = 'paid_social';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Snapchat
@@ -322,6 +347,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Snapchat';
       attr.medium  = 'paid_social';
       attr.channel = 'paid_social';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Bing / Microsoft
@@ -329,6 +355,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Bing Ads';
       attr.medium  = 'cpc';
       attr.channel = 'paid_search';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Google (utm_source=google without gclid/gad)
@@ -336,6 +363,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = med === 'cpc' ? 'Google Ads' : 'Google';
       attr.medium  = med || 'organic';
       attr.channel = med === 'cpc' ? 'paid_search' : 'organic_search';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Beehiiv
@@ -343,6 +371,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Beehiiv';
       attr.medium  = 'email';
       attr.channel = 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Narvar (post-purchase shipping notifications)
@@ -350,6 +379,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Narvar';
       attr.medium  = 'email';
       attr.channel = 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Yotpo (loyalty / rewards emails)
@@ -357,6 +387,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Yotpo';
       attr.medium  = 'email';
       attr.channel = 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Wunderkind (email/SMS remarketing platform)
@@ -364,6 +395,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Wunderkind';
       attr.medium  = 'email';
       attr.channel = 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Klaviyo generic (utm_source=Klaviyo or utm_source=Klaviyo+Campaign without nb_klid)
@@ -371,6 +403,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Klaviyo';
       attr.medium  = med === 'sms' ? 'sms' : 'email';
       attr.channel = med === 'sms' ? 'sms' : 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // utm_source=campaign is Klaviyo's default when no custom source is set
@@ -378,6 +411,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Klaviyo';
       attr.medium  = med;
       attr.channel = med === 'sms' ? 'sms' : 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // AppsLovin / Applov (utm_source=applovin or axon)
@@ -385,6 +419,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Applov';
       attr.medium  = 'paid';
       attr.channel = 'paid_other';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // TikTok (utm_source=tiktok without ttclid)
@@ -392,6 +427,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'TikTok';
       attr.medium  = 'paid_social';
       attr.channel = 'paid_social';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Flyover newsletter variants (flyover_section, flyover_podcast, etc.) → "Flyover"
@@ -399,6 +435,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Flyover';
       attr.medium  = attr.utm_medium || 'paid';
       attr.channel = 'paid_other';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Gentleman Today (gentlemantoday_article, gentlemantoday.co, etc.) → "Gentleman Today"
@@ -406,6 +443,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'Gentleman Today';
       attr.medium  = attr.utm_medium || 'referral';
       attr.channel = attr.utm_medium === 'paid' ? 'paid_other' : 'referral';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // LiveIntent (email newsletter ad network)
@@ -413,6 +451,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = 'LiveIntent';
       attr.medium  = 'email';
       attr.channel = 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
     // Email / SMS traffic — utm_source may be a platform name OR a coupon/campaign name.
@@ -430,6 +469,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.source  = (isPlatform && !looksLikeCoupon) ? attr.utm_source : 'Klaviyo';
       attr.medium  = med;
       attr.channel = med === 'sms' ? 'sms' : 'email';
+      attr.attribution_method = 'utm';
       return attr;
     }
 
@@ -437,6 +477,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
     attr.source  = attr.utm_source;
     attr.medium  = attr.utm_medium || 'referral';
     attr.channel = utmChannel(attr.utm_medium);
+    attr.attribution_method = 'utm';
 
     // Enrich placement from _gl cross-domain linker if present
     // _gcl_au or FPAU in _gl means this user originally came via Google Ads
@@ -528,10 +569,16 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
           attr.medium    = 'cpc';
           attr.channel   = 'paid_search';
           attr.placement = 'via Google Ads';
+          attr.attribution_method = 'click_id';
         } else {
           attr.placement = attr.placement || 'via Google Ads';
+          attr.attribution_method = 'referrer';
         }
+      } else {
+        attr.attribution_method = 'referrer';
       }
+    } else {
+      attr.attribution_method = 'referrer';
     }
 
     return attr;
@@ -548,6 +595,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
       attr.medium    = 'cpc';
       attr.channel   = 'paid_search';
       attr.placement = 'via Google Ads';
+      attr.attribution_method = 'click_id';
       return attr;
     }
   }
@@ -556,6 +604,7 @@ export function parseAttribution(pageUrl: string, referrer: string): Attribution
   attr.source  = 'direct';
   attr.medium  = 'none';
   attr.channel = 'direct';
+  attr.attribution_method = 'direct';
   return attr;
 }
 

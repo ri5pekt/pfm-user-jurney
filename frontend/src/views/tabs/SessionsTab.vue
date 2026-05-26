@@ -70,6 +70,18 @@
         </button>
         <span class="fp-hint">Only sessions that reached the thank-you page</span>
       </div>
+      <div class="fp-divider" />
+      <div class="fp-row">
+        <label class="fp-label">Fingerprint merged</label>
+        <button
+          class="fp-toggle"
+          :class="{ on: fpStitched }"
+          @click="fpStitched = !fpStitched; goTo(1)"
+        >
+          <span class="fp-toggle-knob" />
+        </button>
+        <span class="fp-hint">Sessions recovered via browser fingerprint stitching</span>
+      </div>
       <button v-if="filtersActive" class="fp-clear" @click="clearFilters">Clear filters</button>
     </div>
 
@@ -132,6 +144,7 @@
             </td>
             <td class="col-channel">
               <span class="badge" :class="channelClass(s.channel)">{{ channelLabel(s.channel) }}</span>
+              <span v-if="s.fingerprint_stitched" class="fp-tag" title="Attribution recovered via fingerprint merge">🔗</span>
             </td>
             <td class="col-source">{{ s.source || '—' }}</td>
             <td class="col-placement">{{ s.placement || '—' }}</td>
@@ -158,21 +171,22 @@ import api from '@/api'
 import { flagUrl } from '@/composables/useFlags'
 
 interface Session {
-  session_id:  string
-  first_seen:  string
-  last_seen:   string
-  entry_url:   string
-  source:      string
-  medium:      string
-  channel:     string
-  placement:   string
-  campaign_id: string
-  page_count:  number
-  country:     string | null
-  state_name:  string | null
-  city:        string | null
-  order_id:    string | null
-  revenue_usd: string | null
+  session_id:           string
+  first_seen:           string
+  last_seen:            string
+  entry_url:            string
+  source:               string
+  medium:               string
+  channel:              string
+  placement:            string
+  campaign_id:          string
+  page_count:           number
+  country:              string | null
+  state_name:           string | null
+  city:                 string | null
+  order_id:             string | null
+  revenue_usd:          string | null
+  fingerprint_stitched: boolean
 }
 
 interface ChannelStat { channel: string; count: string }
@@ -189,15 +203,17 @@ const searchId      = ref('')
 const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
 const ordersOnly    = ref(false)
+const fpStitched    = ref(false)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
-const filtersActive   = computed(() => (minPages.value !== null && minPages.value > 0) || ordersOnly.value)
+const filtersActive   = computed(() => (minPages.value !== null && minPages.value > 0) || ordersOnly.value || fpStitched.value)
 const activeFilterCount = computed(() => {
   let n = 0
   if (minPages.value && minPages.value > 0) n++
   if (ordersOnly.value) n++
+  if (fpStitched.value) n++
   return n
 })
 
@@ -209,6 +225,7 @@ async function load() {
     if (searchId.value.trim()) params.session_id = searchId.value.trim()
     if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
     if (ordersOnly.value) params.orders_only = '1'
+    if (fpStitched.value) params.fp_stitched = '1'
     const { data } = await api.get('/sessions', { params })
     sessions.value = data.sessions
     total.value    = data.total
@@ -248,8 +265,9 @@ function clearSearch() {
 }
 
 function clearFilters() {
-  minPages.value  = null
+  minPages.value   = null
   ordersOnly.value = false
+  fpStitched.value = false
   goTo(1)
 }
 
@@ -444,6 +462,13 @@ td { padding: .65rem 1rem; vertical-align: middle; }
 .flag-img      { width: 18px; height: 13px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
 .location-text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 .soft          { color: var(--soft); }
+
+/* Fingerprint merge indicator */
+.fp-tag {
+  display: inline-block; margin-left: .35rem;
+  font-size: .75rem; line-height: 1; vertical-align: middle;
+  opacity: .75; cursor: default;
+}
 
 /* Badges */
 .badge { display: inline-block; padding: .18rem .55rem; border-radius: 4px; font-size: .73rem; font-weight: 600; white-space: nowrap; }
