@@ -32,6 +32,10 @@
           <option value="referral">Referral</option>
           <option value="direct">Direct</option>
         </select>
+        <button class="btn-live" :class="{ on: live }" @click="toggleLive">
+          <span class="live-dot" />
+          {{ live ? 'Live' : 'Live' }}
+        </button>
         <button
           class="btn-filters"
           :class="{ active: filtersActive }"
@@ -165,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import { flagUrl } from '@/composables/useFlags'
@@ -198,6 +202,8 @@ const total         = ref(0)
 const page          = ref(1)
 const limit         = 20
 const loading       = ref(false)
+const live          = ref(false)
+let   liveTimer     = 0
 const filterChannel = ref('')
 const searchId      = ref('')
 const showFilters   = ref(true)
@@ -240,6 +246,17 @@ async function loadStats() {
 }
 
 function goTo(n: number) { page.value = n; load() }
+
+function toggleLive() {
+  live.value = !live.value
+  if (live.value) {
+    liveTimer = window.setInterval(() => {
+      if (page.value === 1) load()
+    }, 5000)
+  } else {
+    clearInterval(liveTimer)
+  }
+}
 
 function toggleChannel(ch: string) {
   filterChannel.value = filterChannel.value === ch ? '' : ch
@@ -311,6 +328,7 @@ function channelClass(ch: string) {
 onMounted(() => { load(); loadStats() })
 // Refresh data when navigating back from session detail (keep-alive restore)
 onActivated(() => { load(); loadStats() })
+onUnmounted(() => clearInterval(liveTimer))
 </script>
 
 <style scoped>
@@ -409,14 +427,23 @@ h2 { font-size: 1rem; font-weight: 600; }
 }
 .filter-select:focus { outline: none; border-color: var(--accent); }
 
-.btn-refresh {
+.btn-live, .btn-refresh {
   display: flex; align-items: center; gap: 6px;
   padding: .4rem .85rem; border-radius: 6px; font-size: .8rem; font-weight: 500;
   cursor: pointer; border: 1.5px solid var(--border);
-  background: var(--surface); color: var(--soft); transition: background .15s;
+  background: var(--surface); color: var(--soft); transition: background .15s, color .15s, border-color .15s;
 }
+.btn-live.on { background: #f0fdfb; border-color: var(--accent); color: var(--accent); }
 .btn-refresh:hover:not(:disabled) { background: var(--bg); color: var(--text); }
 .btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--soft); display: inline-block; flex-shrink: 0;
+}
+.btn-live.on .live-dot { background: var(--accent); animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
 .spin { display: inline-block; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
