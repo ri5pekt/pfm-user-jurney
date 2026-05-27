@@ -345,6 +345,8 @@ function tlEventLabel(type: string): string {
 
 function tlEventClass(type: string): string {
   if (type === 'order_completed') return 'tl-ev-order'
+  if (type === 'add_to_cart')     return 'tl-ev-cart'
+  if (type === 'ppu_accepted')    return 'tl-ev-ppu'
   return 'tl-ev-custom'
 }
 
@@ -460,6 +462,8 @@ function channelClass(ch: string) {
 .tl-time { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--soft); margin-bottom: .15rem; }
 .tl-event-badge { display: inline-block; padding: .1rem .4rem; border-radius: 3px; font-size: .68rem; font-weight: 600; }
 .tl-ev-order  { background: #f0fdf4; color: #16a34a; }
+.tl-ev-cart   { background: #fff7ed; color: #ea580c; }
+.tl-ev-ppu    { background: #eff6ff; color: #2563eb; }
 .tl-ev-custom { background: #fdf4ff; color: #9333ea; }
 .tl-url  { font-size: .82rem; color: var(--text); text-decoration: none; word-break: break-all; display: block; }
 .tl-url:hover { color: var(--accent); }

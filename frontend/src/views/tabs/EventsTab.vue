@@ -89,6 +89,7 @@ interface Event {
 const EVENT_TYPES = [
   { value: 'page_view',       label: 'Page View',       cls: 'pill-pageview' },
   { value: 'order_completed', label: 'Order Completed', cls: 'pill-order'    },
+  { value: 'add_to_cart',     label: 'Add to Cart',     cls: 'pill-cart'     },
   { value: 'ppu_accepted',    label: 'PPU Accepted',    cls: 'pill-ppu'      },
   { value: 'fp_collected',    label: 'FP Collected',    cls: 'pill-fp'       },
 ]
@@ -162,6 +163,8 @@ function eventLabel(type: string): string {
 function eventClass(type: string): string {
   if (!type || type === 'page_view') return 'ev-pageview'
   if (type === 'order_completed')    return 'ev-order'
+  if (type === 'add_to_cart')        return 'ev-cart'
+  if (type === 'ppu_accepted')       return 'ev-ppu'
   return 'ev-custom'
 }
 
@@ -277,8 +280,10 @@ h2 { font-size: 1rem; font-weight: 600; }
 .pill-pageview:hover  { border-color: var(--soft); color: var(--text); }
 .pill-order.active    { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
 .pill-order:hover     { border-color: #16a34a; color: #16a34a; }
-.pill-ppu.active      { background: #fdf4ff; border-color: #9333ea; color: #9333ea; }
-.pill-ppu:hover       { border-color: #9333ea; color: #9333ea; }
+.pill-cart.active     { background: #fff7ed; border-color: #ea580c; color: #ea580c; }
+.pill-cart:hover      { border-color: #ea580c; color: #ea580c; }
+.pill-ppu.active      { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
+.pill-ppu:hover       { border-color: #2563eb; color: #2563eb; }
 .pill-fp.active       { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
 .pill-fp:hover        { border-color: #2563eb; color: #2563eb; }
 
@@ -342,6 +347,8 @@ td { padding: 0.7rem 1rem; vertical-align: middle; }
 }
 .ev-pageview { background: #f8fafc; color: var(--soft); }
 .ev-order    { background: #f0fdf4; color: #16a34a; }
+.ev-cart     { background: #fff7ed; color: #ea580c; }
+.ev-ppu      { background: #eff6ff; color: #2563eb; }
 .ev-custom   { background: #fdf4ff; color: #9333ea; }
 
 /* Pagination */
