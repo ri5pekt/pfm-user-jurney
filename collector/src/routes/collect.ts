@@ -84,17 +84,20 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
 
   const effective_session_id = session_id;
 
-  // For order_completed: dedup by order_id — same order within 24h is silently dropped
+  // For order_completed: dedup globally by order_id (not per-session).
+  // A customer can revisit the thank-you page multiple times, from different
+  // devices, or after their session expires — all should count as one order.
+  // TTL is 30 days; the DB-level guard in the worker provides a permanent backup.
   if (event_type === 'order_completed') {
     const orderId = typeof metadata?.order_id === 'string' || typeof metadata?.order_id === 'number'
       ? String(metadata.order_id).trim()
       : '';
     if (orderId) {
-      const orderKey = `order:${effective_session_id}:${orderId}`;
+      const orderKey = `order:${orderId}`;
       try {
         const seen = await redisClient.get(orderKey);
         if (seen) return; // duplicate order — drop
-        await redisClient.set(orderKey, '1', 'EX', 86400); // 24h TTL
+        await redisClient.set(orderKey, '1', 'EX', 2592000); // 30-day TTL
       } catch {
         // Redis error — proceed rather than blocking the event
       }

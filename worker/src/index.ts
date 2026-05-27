@@ -209,6 +209,15 @@ async function drainBatch(): Promise<void> {
       const currency   = meta.currency as string;
       const revenueUsd = rates ? toUsd(amount, currency, rates) : null;
 
+      // DB-level guard: if this order_id was already recorded on ANY session,
+      // skip it. This is a permanent backstop for cases where the Redis key
+      // expired or was evicted (e.g. Redis restart).
+      const existing = await pgPool.query(
+        `SELECT 1 FROM sessions WHERE order_id = $1 LIMIT 1`,
+        [orderId],
+      );
+      if (existing.rows.length > 0) continue;
+
       await pgPool.query(
         `UPDATE sessions
          SET order_id    = $1,
