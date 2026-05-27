@@ -58,40 +58,4 @@
   }
 
   window.pfmTrack = track;
-
-  // Fingerprint collection — once per pfm session, fired in idle time after page load.
-  // Loads thumbmark.min.js async, collects a browser fingerprint hash, and sends it
-  // as a custom fp_collected event. Used server-side for session stitching only.
-  // Triple-wrapped in try/catch — any failure is silent and never affects page load.
-  (function () {
-    var FP_KEY = 'pfm_fp_sid';
-    try {
-      if (localStorage.getItem(FP_KEY) === sid()) return;
-    } catch (e) {}
-
-    function collectFp() {
-      try {
-        var s = document.createElement('script');
-        s.src = 'https://uj.pfm-qa.com/thumbmark.min.js';
-        s.onload = function () {
-          try {
-            // ThumbmarkJS.getFingerprint() returns the hash string directly (v1.9.1+)
-            ThumbmarkJS.getFingerprint().then(function (fp) {
-              if (!fp) return;
-              send('fp_collected', location.href, '', { fp: String(fp) });
-              try { localStorage.setItem(FP_KEY, sid()); } catch (e) {}
-            }).catch(function () {});
-          } catch (e) {}
-        };
-        s.onerror = function () {};
-        document.head.appendChild(s);
-      } catch (e) {}
-    }
-
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(collectFp, { timeout: 5000 });
-    } else {
-      setTimeout(collectFp, 2000);
-    }
-  })();
 })();

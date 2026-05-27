@@ -3,7 +3,7 @@ import { pgPool } from '../lib/postgres';
 
 export const sessionsRouter = Router();
 
-// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&utm_campaign=GA0PVYXNNA&min_pages=3&orders_only=1&fp_stitched=1&order_id=3903895
+// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&utm_campaign=GA0PVYXNNA&min_pages=3&orders_only=1&order_id=3903895
 sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const page    = Math.max(1, parseInt(req.query.page   as string) || 1);
   const limit   = Math.min(100, parseInt(req.query.limit as string) || 20);
@@ -15,7 +15,6 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const order_id     = (req.query.order_id     as string) || '';
   const min_pages    = parseInt(req.query.min_pages  as string) || 0;
   const orders_only  = req.query.orders_only  === '1';
-  const fp_stitched  = req.query.fp_stitched  === '1';
 
   const conditions: string[] = [];
   const params: unknown[]    = [];
@@ -35,10 +34,6 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   if (orders_only) {
     conditions.push(`session_id IN (SELECT DISTINCT session_id FROM events WHERE page_url LIKE '%/thank-you-order%')`);
   }
-  if (fp_stitched) {
-    conditions.push(`fingerprint_stitched = true`);
-  }
-
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countRow = await pgPool.query(`SELECT COUNT(*) FROM sessions ${where}`, params);
@@ -51,7 +46,7 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
             utm_source, utm_medium, utm_campaign, page_count,
             country, state_name, city,
             order_id, revenue_usd,
-            attribution_method, fingerprint_stitched
+            attribution_method
      FROM   sessions ${where}
      ORDER  BY first_seen DESC
      LIMIT  $${params.length - 1} OFFSET $${params.length}`,

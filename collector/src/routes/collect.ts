@@ -61,16 +61,7 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isNoisyUrl(page_url)) return;
 
-  // Redirect merged sessions — if this session_id was absorbed into another
-  // via fingerprint merge, transparently reroute to the canonical session_id.
-  // Checked after bot/noise filters so dropped events don't burn a Redis lookup.
-  let effective_session_id = session_id;
-  try {
-    const canonical = await redisClient.get(`merged:${session_id}`);
-    if (canonical) effective_session_id = canonical;
-  } catch {
-    // Redis error — proceed with original session_id
-  }
+  const effective_session_id = session_id;
 
   // For order_completed: dedup by order_id — same order within 24h is silently dropped
   if (event_type === 'order_completed') {

@@ -1,0 +1,23 @@
+# ─── Database ────────────────────────────────────────────────────────────────
+POSTGRES_DB=pfm_journeys
+POSTGRES_USER=pfm_user
+POSTGRES_PASSWORD=devpassword
+
+# ─── Redis ────────────────────────────────────────────────────────────────────
+REDIS_URL=redis://redis:6379
+REDIS_QUEUE_KEY=events_queue
+
+# ─── Collector API ────────────────────────────────────────────────────────────
+PORT_COLLECTOR=3001
+# Empty = allow all origins in dev
+ALLOWED_ORIGINS=
+
+# ─── Admin API ───────────────────────────────────────────────────────────────
+PORT_ADMIN=3002
+JWT_SECRET=dev_jwt_secret
+ADMIN_EMAIL=denis@particleformen.com
+ADMIN_PASSWORD=23ltybc69
+
+# ─── Worker ──────────────────────────────────────────────────────────────────
+WORKER_BATCH_SIZE=100
+WORKER_INTERVAL_MS=3000

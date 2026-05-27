@@ -84,18 +84,6 @@
         </button>
         <span class="fp-hint">Only sessions that reached the thank-you page</span>
       </div>
-      <div class="fp-divider" />
-      <div class="fp-row">
-        <label class="fp-label">Fingerprint merged</label>
-        <button
-          class="fp-toggle"
-          :class="{ on: fpStitched }"
-          @click="fpStitched = !fpStitched; goTo(1)"
-        >
-          <span class="fp-toggle-knob" />
-        </button>
-        <span class="fp-hint">Sessions recovered via browser fingerprint stitching</span>
-      </div>
       <button v-if="filtersActive" class="fp-clear" @click="clearFilters">Clear filters</button>
     </div>
 
@@ -167,7 +155,6 @@
             </td>
             <td class="col-channel">
               <span class="badge" :class="channelClass(s.channel)">{{ channelLabel(s.channel) }}</span>
-              <span v-if="s.fingerprint_stitched" class="fp-tag" title="Attribution recovered via fingerprint merge">🔗</span>
             </td>
             <td class="col-source">{{ s.source || '—' }}</td>
             <td class="col-placement">{{ s.placement || '—' }}</td>
@@ -209,7 +196,6 @@ interface Session {
   city:                 string | null
   order_id:             string | null
   revenue_usd:          string | null
-  fingerprint_stitched: boolean
 }
 
 interface ChannelStat { channel: string; count: string }
@@ -232,19 +218,17 @@ const searchOrderId = ref('')
 const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
 const ordersOnly    = ref(false)
-const fpStitched    = ref(false)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 const filtersActive   = computed(() =>
-  (minPages.value !== null && minPages.value > 0) || ordersOnly.value || fpStitched.value
+  (minPages.value !== null && minPages.value > 0) || ordersOnly.value
 )
 const activeFilterCount = computed(() => {
   let n = 0
   if (minPages.value && minPages.value > 0) n++
   if (ordersOnly.value) n++
-  if (fpStitched.value) n++
   return n
 })
 // Active traffic-source chips (from Overview navigation)
@@ -267,7 +251,6 @@ async function load() {
     if (searchOrderId.value.trim()) params.order_id = searchOrderId.value.trim()
     if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
     if (ordersOnly.value) params.orders_only = '1'
-    if (fpStitched.value) params.fp_stitched = '1'
     const { data } = await api.get('/sessions', { params })
     sessions.value = data.sessions
     total.value    = data.total
@@ -330,7 +313,6 @@ function clearOrderId() {
 function clearFilters() {
   minPages.value   = null
   ordersOnly.value = false
-  fpStitched.value = false
   goTo(1)
 }
 
@@ -381,7 +363,6 @@ function applyRouteQuery() {
   if (q.order_id)     searchOrderId.value  = q.order_id     as string
   if (q.min_pages)    minPages.value       = parseInt(q.min_pages as string) || null
   if (q.orders_only === '1') ordersOnly.value = true
-  if (q.fp_stitched === '1') fpStitched.value = true
   if (q.page)         page.value           = parseInt(q.page as string) || 1
 }
 
@@ -396,13 +377,12 @@ function buildUrlQuery(): Record<string, string> {
   if (searchOrderId.value.trim())            q.order_id     = searchOrderId.value.trim()
   if (minPages.value && minPages.value > 0)  q.min_pages    = String(minPages.value)
   if (ordersOnly.value)                      q.orders_only  = '1'
-  if (fpStitched.value)                      q.fp_stitched  = '1'
   return q
 }
 
 // Keep URL in sync with filter state so the back button restores filters
 watch(
-  [page, filterChannel, filterSource, filterCampaign, searchId, searchOrderId, minPages, ordersOnly, fpStitched],
+  [page, filterChannel, filterSource, filterCampaign, searchId, searchOrderId, minPages, ordersOnly],
   () => router.replace({ query: buildUrlQuery() }),
   { flush: 'post' },
 )
