@@ -28,6 +28,16 @@
           />
           <button v-if="searchOrderId" class="search-clear" @click="clearOrderId">✕</button>
         </div>
+        <div class="search-wrap">
+          <input
+            v-model="searchEmail"
+            class="search-input"
+            placeholder="Search email…"
+            @keydown.enter="doSearch"
+            @input="onEmailInput"
+          />
+          <button v-if="searchEmail" class="search-clear" @click="clearEmail">✕</button>
+        </div>
         <select v-model="filterChannel" @change="goTo(1)" class="filter-select">
           <option value="">All channels</option>
           <option value="paid_search">Paid Search</option>
@@ -215,6 +225,7 @@ const filterSource   = ref('')
 const filterCampaign = ref('')
 const searchId      = ref('')
 const searchOrderId = ref('')
+const searchEmail   = ref('')
 const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
 const ordersOnly    = ref(false)
@@ -248,7 +259,8 @@ async function load() {
     if (filterSource.value)   params.source        = filterSource.value
     if (filterCampaign.value) params.utm_campaign  = filterCampaign.value
     if (searchId.value.trim()) params.session_id = searchId.value.trim()
-    if (searchOrderId.value.trim()) params.order_id = searchOrderId.value.trim()
+    if (searchOrderId.value.trim()) params.order_id   = searchOrderId.value.trim()
+    if (searchEmail.value.trim())   params.user_email = searchEmail.value.trim()
     if (minPages.value && minPages.value > 0) params.min_pages = minPages.value
     if (ordersOnly.value) params.orders_only = '1'
     const { data } = await api.get('/sessions', { params })
@@ -310,6 +322,16 @@ function clearOrderId() {
   goTo(1)
 }
 
+function onEmailInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => goTo(1), 400)
+}
+
+function clearEmail() {
+  searchEmail.value = ''
+  goTo(1)
+}
+
 function clearFilters() {
   minPages.value   = null
   ordersOnly.value = false
@@ -361,6 +383,7 @@ function applyRouteQuery() {
   if (q.utm_campaign) filterCampaign.value = q.utm_campaign as string
   if (q.session_id)   searchId.value       = q.session_id   as string
   if (q.order_id)     searchOrderId.value  = q.order_id     as string
+  if (q.user_email)   searchEmail.value    = q.user_email   as string
   if (q.min_pages)    minPages.value       = parseInt(q.min_pages as string) || null
   if (q.orders_only === '1') ordersOnly.value = true
   if (q.page)         page.value           = parseInt(q.page as string) || 1
@@ -375,6 +398,7 @@ function buildUrlQuery(): Record<string, string> {
   if (filterCampaign.value)                  q.utm_campaign = filterCampaign.value
   if (searchId.value.trim())                 q.session_id   = searchId.value.trim()
   if (searchOrderId.value.trim())            q.order_id     = searchOrderId.value.trim()
+  if (searchEmail.value.trim())             q.user_email   = searchEmail.value.trim()
   if (minPages.value && minPages.value > 0)  q.min_pages    = String(minPages.value)
   if (ordersOnly.value)                      q.orders_only  = '1'
   return q
@@ -382,7 +406,7 @@ function buildUrlQuery(): Record<string, string> {
 
 // Keep URL in sync with filter state so the back button restores filters
 watch(
-  [page, filterChannel, filterSource, filterCampaign, searchId, searchOrderId, minPages, ordersOnly],
+  [page, filterChannel, filterSource, filterCampaign, searchId, searchOrderId, searchEmail, minPages, ordersOnly],
   () => router.replace({ query: buildUrlQuery() }),
   { flush: 'post' },
 )

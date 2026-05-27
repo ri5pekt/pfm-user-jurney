@@ -167,6 +167,19 @@ async function drainBatch(): Promise<void> {
     );
   }
 
+  // ── Enrich sessions with user email ─────────────────────────────
+  // Any event whose metadata contains a non-empty user_email updates the session.
+  // This runs on page_view events from non-cached WooCommerce pages (cart, checkout,
+  // thank-you, my-account) where the PHP template injects the logged-in email.
+  for (const ev of deduped) {
+    const email = typeof ev.metadata?.user_email === 'string' ? ev.metadata.user_email.trim().toLowerCase() : '';
+    if (!email) continue;
+    await pgPool.query(
+      `UPDATE sessions SET user_email = $1 WHERE session_id = $2`,
+      [email, ev.session_id],
+    );
+  }
+
   // ── Enrich sessions with order data ─────────────────────────────
   // order_completed  → set order_id + revenue_usd (initial purchase)
   // ppu_accepted     → add to revenue_usd (post-purchase upsell on same order)

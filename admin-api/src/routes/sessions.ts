@@ -3,7 +3,7 @@ import { pgPool } from '../lib/postgres';
 
 export const sessionsRouter = Router();
 
-// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&utm_campaign=GA0PVYXNNA&min_pages=3&orders_only=1&order_id=3903895
+// GET /sessions?page=1&limit=20&channel=paid_social&source=Facebook&utm_campaign=GA0PVYXNNA&min_pages=3&orders_only=1&order_id=3903895&user_email=john@example.com
 sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const page    = Math.max(1, parseInt(req.query.page   as string) || 1);
   const limit   = Math.min(100, parseInt(req.query.limit as string) || 20);
@@ -13,6 +13,7 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const utm_campaign = (req.query.utm_campaign as string) || '';
   const session_id   = (req.query.session_id   as string) || '';
   const order_id     = (req.query.order_id     as string) || '';
+  const user_email   = (req.query.user_email   as string) || '';
   const min_pages    = parseInt(req.query.min_pages  as string) || 0;
   const orders_only  = req.query.orders_only  === '1';
 
@@ -30,6 +31,7 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   }
   if (session_id) { params.push(`%${session_id}%`); conditions.push(`session_id ILIKE $${params.length}`); }
   if (order_id)   { params.push(`%${order_id}%`);   conditions.push(`order_id   ILIKE $${params.length}`); }
+  if (user_email) { params.push(`%${user_email}%`); conditions.push(`user_email ILIKE $${params.length}`); }
   if (min_pages > 0) { params.push(min_pages); conditions.push(`page_count >= $${params.length}`); }
   if (orders_only) {
     conditions.push(`session_id IN (SELECT DISTINCT session_id FROM events WHERE page_url LIKE '%/thank-you-order%')`);
@@ -46,7 +48,7 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
             utm_source, utm_medium, utm_campaign, page_count,
             country, state_name, city,
             order_id, revenue_usd,
-            attribution_method
+            attribution_method, user_email
      FROM   sessions ${where}
      ORDER  BY first_seen DESC
      LIMIT  $${params.length - 1} OFFSET $${params.length}`,

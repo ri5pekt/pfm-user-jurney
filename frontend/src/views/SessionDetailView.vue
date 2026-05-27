@@ -117,6 +117,10 @@
             <span class="attr-label">Referrer</span>
             <span class="attr-value soft">Direct / None</span>
           </div>
+          <div class="attr-row" v-if="session.user_email">
+            <span class="attr-label">User Email</span>
+            <span class="attr-value mono">{{ session.user_email }}</span>
+          </div>
           <div class="attr-row">
             <span class="attr-label">Storage</span>
             <span class="attr-value storage-ids">
@@ -200,6 +204,7 @@ interface SessionDetail {
   city:         string | null
   order_id:     string | null
   revenue_usd:  string | null
+  user_email:   string | null
 }
 
 interface EventRow {
