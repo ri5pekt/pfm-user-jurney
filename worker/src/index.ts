@@ -306,6 +306,29 @@ async function drainBatch(): Promise<void> {
     }
   }
 
+  // ── Cleanup lingering thank-you stubs ───────────────────────────
+  // Remove isolated single-page thank-you sessions that have no order and
+  // are older than 2 minutes (enough time for order_completed to arrive).
+  // These are orphan page_views left behind when stitching moved the order
+  // to a prior session on a different session_id.
+  await pgPool.query(
+    `DELETE FROM events
+     WHERE session_id IN (
+       SELECT session_id FROM sessions
+       WHERE page_count = 1
+         AND entry_url  LIKE '%thank-you-order%'
+         AND order_id   IS NULL
+         AND first_seen < NOW() - INTERVAL '2 minutes'
+     )`,
+  );
+  await pgPool.query(
+    `DELETE FROM sessions
+     WHERE page_count = 1
+       AND entry_url  LIKE '%thank-you-order%'
+       AND order_id   IS NULL
+       AND first_seen < NOW() - INTERVAL '2 minutes'`,
+  );
+
   console.log(`[worker] inserted ${deduped.length} events (${events.length - deduped.length} deduped), upserted sessions`);
 }
 
