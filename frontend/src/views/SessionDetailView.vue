@@ -109,6 +109,13 @@
             <span class="attr-label">IP</span>
             <span class="attr-value mono soft-ip">{{ session.ip }}</span>
           </div>
+          <div class="attr-row" v-if="deviceInfo">
+            <span class="attr-label">Device</span>
+            <span class="attr-value device-info">
+              <span class="device-pill">{{ deviceInfo.device }}</span>
+              <span class="browser-pill">{{ deviceInfo.browser }}</span>
+            </span>
+          </div>
           <div class="attr-row">
             <span class="attr-label">Entry Page</span>
             <a class="attr-link" :href="session.entry_url" target="_blank" rel="noopener">{{ urlPath(session.entry_url) }}</a>
@@ -218,6 +225,7 @@ interface EventRow {
   page_url:   string
   referrer:   string
   metadata:   Record<string, unknown> | null
+  user_agent: string | null
 }
 
 const route   = useRoute()
@@ -312,6 +320,40 @@ const storageIds = computed(() => {
     }
   }
   return { ls: null, ck: null, lsMatch: 'absent', ckMatch: 'absent' }
+})
+
+const deviceInfo = computed(() => {
+  const ua = events.value.find(e => e.user_agent)?.user_agent || ''
+  if (!ua) return null
+
+  // Browser
+  let browser = 'Unknown browser'
+  if (/FB_IAB|FBAV/i.test(ua))              browser = 'Facebook In-App Browser'
+  else if (/Instagram/i.test(ua))            browser = 'Instagram In-App Browser'
+  else if (/TikTok/i.test(ua))              browser = 'TikTok In-App Browser'
+  else if (/Snapchat/i.test(ua))            browser = 'Snapchat In-App Browser'
+  else if (/Ddg\//i.test(ua))              browser = 'DuckDuckGo'
+  else if (/EdgA?\/|Edg\//i.test(ua))       browser = 'Edge'
+  else if (/CriOS\//i.test(ua))             browser = 'Chrome for iOS'
+  else if (/FxiOS\//i.test(ua))             browser = 'Firefox for iOS'
+  else if (/OPiOS\//i.test(ua))             browser = 'Opera for iOS'
+  else if (/Chrome\/\d/i.test(ua) && !/Chromium/i.test(ua)) browser = 'Chrome'
+  else if (/Firefox\/\d/i.test(ua))         browser = 'Firefox'
+  else if (/Safari\/\d/i.test(ua))          browser = 'Safari'
+  else if (/MSIE|Trident/i.test(ua))        browser = 'Internet Explorer'
+
+  // OS / Device
+  let device = 'Unknown device'
+  if (/iPhone/i.test(ua))                   device = 'iPhone'
+  else if (/iPad/i.test(ua))                device = 'iPad'
+  else if (/Android.*Mobile/i.test(ua))     device = 'Android Phone'
+  else if (/Android/i.test(ua))             device = 'Android Tablet'
+  else if (/Macintosh/i.test(ua))           device = 'Mac'
+  else if (/Windows NT/i.test(ua))          device = 'Windows PC'
+  else if (/Linux/i.test(ua))               device = 'Linux'
+  else if (/CrOS/i.test(ua))               device = 'Chromebook'
+
+  return { browser, device, raw: ua }
 })
 
 const duration = computed(() => {
@@ -441,6 +483,9 @@ function channelClass(ch: string) {
 .location-cell { display: flex; align-items: center; gap: .4rem; }
 .flag-img      { width: 20px; height: 14px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
 .soft-ip       { color: var(--soft); font-size: .8rem; }
+.device-info   { display: flex; gap: .4rem; flex-wrap: wrap; }
+.device-pill   { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .75rem; font-weight: 600; background: #f1f5f9; color: #475569; }
+.browser-pill  { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .75rem; font-weight: 600; background: #f0fdf4; color: #15803d; }
 
 /* Badge */
 .badge { display: inline-block; padding: .18rem .55rem; border-radius: 4px; font-size: .73rem; font-weight: 600; }
