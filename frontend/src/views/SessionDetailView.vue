@@ -144,7 +144,7 @@
                 <span class="storage-val mono">{{ storageIds.ck || '—' }}</span>
               </span>
               <span v-if="storageIds.ls && storageIds.ck && storageIds.ls !== storageIds.ck" class="storage-mismatch">⚠ mismatch</span>
-              <span v-else-if="!storageIds.ls && !storageIds.ck" class="storage-mismatch">no storage data yet</span>
+              <span v-else-if="!storageIds.ls && !storageIds.ck" class="storage-mismatch">new visitor — no prior session in storage</span>
             </span>
           </div>
         </div>
@@ -305,11 +305,14 @@ const displayEvents = computed(() => {
 // These are sent in the page_view metadata since the dual-storage update.
 const storageIds = computed(() => {
   const sid = session.value?.session_id ?? ''
+  // The tracking script captures ls/ck BEFORE sid() initialises storage,
+  // so a brand-new visitor's first page_view always has null values.
+  // Scan ALL page_view events and use the first one that actually has data.
   for (const ev of events.value) {
     if (ev.event_type === 'page_view' && ev.metadata) {
-      const ls = (ev.metadata.ls_sid as string | null) ?? null
-      const ck = (ev.metadata.cookie_sid as string | null) ?? null
-      if (ls !== undefined || ck !== undefined) {
+      const ls = (ev.metadata.ls_sid  as string | null) || null
+      const ck = (ev.metadata.cookie_sid as string | null) || null
+      if (ls || ck) {
         return {
           ls: ls ? ls.slice(0, 8) : null,
           ck: ck ? ck.slice(0, 8) : null,
