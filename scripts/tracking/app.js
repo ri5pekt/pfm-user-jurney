@@ -1,6 +1,6 @@
 /* PFM User Journey Tracker — drop into WordPress <head> */
 (function () {
-  var K = 'pfm_sid', E = 'pfm_sid_exp', TTL = 2592e5, URL = 'https://uj.pfm-qa.com/p';
+  var K = 'pfm_sid', E = 'pfm_sid_exp', CK = 'pfm_sid', TTL = 2592e5, URL = 'https://uj.pfm-qa.com/p';
 
   function uid() {
     return crypto.randomUUID ? crypto.randomUUID()
@@ -10,14 +10,65 @@
         });
   }
 
-  function sid() {
+  // ── Cookie helpers ────────────────────────────────────────────────
+  function setCookie(val, ttlMs) {
     try {
-      var n = Date.now(), v = localStorage.getItem(K), x = +localStorage.getItem(E);
-      if (!v || n > x) { v = uid(); localStorage.setItem(K, v); localStorage.setItem(E, n + TTL); }
-      return v;
-    } catch (e) { return uid(); }
+      var exp = new Date(Date.now() + ttlMs).toUTCString();
+      document.cookie = CK + '=' + val + '; expires=' + exp + '; path=/; SameSite=Lax';
+    } catch (e) {}
   }
 
+  function getCookie() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)pfm_sid=([^;]+)/);
+      return m ? m[1] : null;
+    } catch (e) { return null; }
+  }
+
+  // ── Session ID — stored in both localStorage and cookie ───────────
+  // Priority: localStorage (if not expired) → cookie → new UUID.
+  // Whichever wins, both storages are kept in sync for resilience:
+  //   - If localStorage is wiped by a privacy tool, the cookie restores it.
+  //   - If cookies are blocked, localStorage still works.
+  function sid() {
+    try {
+      var n = Date.now();
+      var lsVal = localStorage.getItem(K);
+      var lsExp = +localStorage.getItem(E);
+      var ckVal = getCookie();
+
+      if (lsVal && n < lsExp) {
+        // localStorage is valid — sync cookie if it drifted
+        if (ckVal !== lsVal) setCookie(lsVal, lsExp - n);
+        return lsVal;
+      }
+
+      if (ckVal) {
+        // localStorage expired/cleared — restore from cookie
+        var restoredExp = n + TTL;
+        localStorage.setItem(K, ckVal);
+        localStorage.setItem(E, restoredExp);
+        setCookie(ckVal, TTL);
+        return ckVal;
+      }
+
+      // Neither is available — create a new session ID
+      var v = uid();
+      localStorage.setItem(K, v);
+      localStorage.setItem(E, n + TTL);
+      setCookie(v, TTL);
+      return v;
+    } catch (e) {
+      // localStorage blocked (e.g. private mode strict) — try cookie only
+      var ck = getCookie();
+      if (ck) return ck;
+      var newId = uid();
+      setCookie(newId, TTL);
+      return newId;
+    }
+  }
+
+  // ── Send ──────────────────────────────────────────────────────────
   function send(eventType, pageUrl, referrer, metadata) {
     try {
       var payload = {
@@ -41,13 +92,14 @@
     } catch (e) {}
   }
 
-  // Auto-fire page_view on every page load
-  send('page_view', location.href, document.referrer);
+  // ── Auto-fire page_view, including raw ls/cookie diagnostic ──────
+  // Capture the raw values BEFORE sid() normalises/syncs them so we
+  // can see in the admin whether they were present and whether they matched.
+  var rawLs = null, rawCk = getCookie();
+  try { rawLs = localStorage.getItem(K); } catch (e) {}
+  send('page_view', location.href, document.referrer, { ls_sid: rawLs, cookie_sid: rawCk });
 
-  // Global API for custom events.
-  // Supports a pre-load queue: if code runs before this script (e.g. header vs footer),
-  // callers push to window.pfmTrack.q and we drain it here on init.
-  // Usage: window.pfmTrack('order_completed', { order_id: '123', value: 89.99, currency: 'USD' })
+  // ── Global API for custom events ──────────────────────────────────
   function track(eventType, metadata) {
     send(eventType, location.href, '', metadata || null);
   }

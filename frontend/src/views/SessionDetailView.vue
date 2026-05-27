@@ -117,6 +117,21 @@
             <span class="attr-label">Referrer</span>
             <span class="attr-value soft">Direct / None</span>
           </div>
+          <div class="attr-row">
+            <span class="attr-label">Storage</span>
+            <span class="attr-value storage-ids">
+              <span class="storage-item" :class="storageIds.lsMatch">
+                <span class="storage-icon">LS</span>
+                <span class="storage-val mono">{{ storageIds.ls || '—' }}</span>
+              </span>
+              <span class="storage-item" :class="storageIds.ckMatch">
+                <span class="storage-icon">CK</span>
+                <span class="storage-val mono">{{ storageIds.ck || '—' }}</span>
+              </span>
+              <span v-if="storageIds.ls && storageIds.ck && storageIds.ls !== storageIds.ck" class="storage-mismatch">⚠ mismatch</span>
+              <span v-else-if="!storageIds.ls && !storageIds.ck" class="storage-mismatch">no storage data yet</span>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -141,8 +156,8 @@
                 </span>
               </div>
               <a class="tl-url" :href="ev.page_url" target="_blank" rel="noopener">{{ urlPath(ev.page_url) }}</a>
-              <div v-if="ev.metadata && Object.keys(ev.metadata).length" class="tl-meta">
-                <span v-for="(val, key) in ev.metadata" :key="key" class="tl-meta-item">
+              <div v-if="ev.metadata && timelineMetaEntries(ev.metadata).length" class="tl-meta">
+                <span v-for="[key, val] in timelineMetaEntries(ev.metadata)" :key="key" class="tl-meta-item">
                   <span class="tl-meta-key">{{ key }}</span>
                   <span class="tl-meta-val">{{ formatMetaVal(key, val) }}</span>
                 </span>
@@ -268,6 +283,27 @@ const displayEvents = computed(() => {
   return result
 })
 
+// Pull ls_sid and cookie_sid from the first page_view that carries them.
+// These are sent in the page_view metadata since the dual-storage update.
+const storageIds = computed(() => {
+  const sid = session.value?.session_id ?? ''
+  for (const ev of events.value) {
+    if (ev.event_type === 'page_view' && ev.metadata) {
+      const ls = (ev.metadata.ls_sid as string | null) ?? null
+      const ck = (ev.metadata.cookie_sid as string | null) ?? null
+      if (ls !== undefined || ck !== undefined) {
+        return {
+          ls: ls ? ls.slice(0, 8) : null,
+          ck: ck ? ck.slice(0, 8) : null,
+          lsMatch: ls ? (ls === sid ? 'match' : 'diff') : 'absent',
+          ckMatch: ck ? (ck === sid ? 'match' : 'diff') : 'absent',
+        }
+      }
+    }
+  }
+  return { ls: null, ck: null, lsMatch: 'absent', ckMatch: 'absent' }
+})
+
 const duration = computed(() => {
   if (!session.value) return '—'
   const ms = new Date(session.value.last_seen).getTime() - new Date(session.value.first_seen).getTime()
@@ -282,6 +318,11 @@ const CHANNEL_LABELS: Record<string, string> = {
   email: 'Email', sms: 'SMS',
   organic_search: 'Organic Search', organic_shopping: 'Organic Shopping',
   organic_social: 'Organic Social', referral: 'Referral', direct: 'Direct',
+}
+
+const HIDDEN_META_KEYS = new Set(['ls_sid', 'cookie_sid'])
+function timelineMetaEntries(meta: Record<string, unknown>): [string, unknown][] {
+  return Object.entries(meta).filter(([k]) => !HIDDEN_META_KEYS.has(k))
 }
 
 function formatMetaVal(key: string, val: unknown): string {
@@ -372,6 +413,16 @@ function channelClass(ch: string) {
 .attr-value.soft { color: var(--soft); font-style: italic; }
 .attr-value.mono { font-family: monospace; font-size: .8rem; }
 .attr-link { font-size: .82rem; color: var(--accent); text-decoration: none; word-break: break-all; }
+
+/* Storage diagnostic */
+.storage-ids { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.storage-item { display: flex; align-items: center; gap: .3rem; padding: .15rem .4rem; border-radius: 4px; font-size: .75rem; border: 1px solid var(--border); }
+.storage-item.match  { border-color: #22c55e; background: #f0fdf4; }
+.storage-item.diff   { border-color: #f59e0b; background: #fffbeb; }
+.storage-item.absent { border-color: var(--border); background: #f8fafc; opacity: .6; }
+.storage-icon { font-weight: 700; font-size: .65rem; color: var(--soft); letter-spacing: .03em; }
+.storage-val  { font-family: monospace; font-size: .75rem; color: var(--text); }
+.storage-mismatch { font-size: .72rem; color: #f59e0b; font-weight: 500; }
 .attr-link:hover { text-decoration: underline; }
 
 .revenue-value { font-weight: 700; color: #16a34a; }
