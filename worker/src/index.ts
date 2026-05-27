@@ -253,11 +253,26 @@ async function drainBatch(): Promise<void> {
           stitchMap.set(ev.session_id, targetSessionId);
           console.log(`[worker] email-stitch: order ${orderId} → session ${targetSessionId} (was ${ev.session_id})`);
 
-          // Delete the isolated stub session and its events — it's just a cached
-          // thank-you page artifact with no real journey. The order now lives on
-          // the prior attributed session, so the stub has no useful data.
-          await pgPool.query(`DELETE FROM events  WHERE session_id = $1`, [ev.session_id]);
+          // Delete the isolated stub — order now lives on the prior attributed session.
+          await pgPool.query(`DELETE FROM events   WHERE session_id = $1`, [ev.session_id]);
           await pgPool.query(`DELETE FROM sessions WHERE session_id = $1`, [ev.session_id]);
+        }
+      } else {
+        // No billing_email — stitching impossible. If this session is just an
+        // isolated thank-you page with no real journey (cached page artifact,
+        // login-redirect stub, etc.) drop it entirely rather than pollute the data.
+        const isStub = await pgPool.query(
+          `SELECT 1 FROM sessions
+           WHERE session_id = $1
+             AND page_count  = 1
+             AND entry_url   LIKE '%thank-you-order%'`,
+          [ev.session_id],
+        );
+        if (isStub.rows.length > 0) {
+          console.log(`[worker] drop stub: order ${orderId} on isolated thank-you session ${ev.session_id} (no billing_email)`);
+          await pgPool.query(`DELETE FROM events   WHERE session_id = $1`, [ev.session_id]);
+          await pgPool.query(`DELETE FROM sessions WHERE session_id = $1`, [ev.session_id]);
+          continue;
         }
       }
 
