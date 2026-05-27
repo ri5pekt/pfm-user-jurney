@@ -130,6 +130,7 @@
             <th>Pages</th>
             <th>Location</th>
             <th>Revenue</th>
+            <th>Order</th>
             <th>Channel</th>
             <th>Source</th>
             <th>Placement</th>
@@ -138,10 +139,10 @@
         </thead>
         <tbody>
           <tr v-if="loading && sessions.length === 0">
-            <td colspan="9" class="state-cell">Loading…</td>
+            <td colspan="10" class="state-cell">Loading…</td>
           </tr>
           <tr v-else-if="sessions.length === 0">
-            <td colspan="9" class="state-cell">No sessions yet.</td>
+            <td colspan="10" class="state-cell">No sessions yet.</td>
           </tr>
           <tr v-for="s in sessions" :key="s.session_id" class="row clickable" @click="openSession(s.session_id)">
             <td class="col-time">{{ formatTime(s.first_seen) }}</td>
@@ -164,6 +165,10 @@
             </td>
             <td class="col-revenue">
               <span v-if="s.revenue_usd" class="revenue-pill">${{ Number(s.revenue_usd).toFixed(2) }}</span>
+              <span v-else class="soft">—</span>
+            </td>
+            <td class="col-order">
+              <span v-if="s.order_id" class="order-pill">#{{ s.order_id }}</span>
               <span v-else class="soft">—</span>
             </td>
             <td class="col-channel">
@@ -572,6 +577,8 @@ td { padding: .65rem 1rem; vertical-align: middle; }
 .col-pages    { color: var(--soft); font-size: .8rem; text-align: center; }
 .col-location { font-size: .8rem; }
 .col-revenue  { font-size: .82rem; white-space: nowrap; }
+.col-order    { font-size: .82rem; white-space: nowrap; }
+.order-pill   { font-weight: 600; color: #0369a1; background: #e0f2fe; padding: .15rem .45rem; border-radius: 4px; font-size: .78rem; }
 .col-source   { color: var(--text); font-size: .82rem; }
 .col-placement{ color: var(--soft); font-size: .78rem; }
 .col-entry    { color: var(--text); font-size: .8rem; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
