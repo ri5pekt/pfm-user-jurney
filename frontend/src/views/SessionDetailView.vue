@@ -105,6 +105,10 @@
               <span>{{ [session.city, session.state_name, session.country].filter(Boolean).join(', ') }}</span>
             </span>
           </div>
+          <div class="attr-row" v-if="session.ip">
+            <span class="attr-label">IP</span>
+            <span class="attr-value mono soft-ip">{{ session.ip }}</span>
+          </div>
           <div class="attr-row">
             <span class="attr-label">Entry Page</span>
             <a class="attr-link" :href="session.entry_url" target="_blank" rel="noopener">{{ urlPath(session.entry_url) }}</a>
@@ -202,6 +206,7 @@ interface SessionDetail {
   country:      string | null
   state_name:   string | null
   city:         string | null
+  ip:           string | null
   order_id:     string | null
   revenue_usd:  string | null
   user_email:   string | null
@@ -435,6 +440,7 @@ function channelClass(ch: string) {
 .revenue-value { font-weight: 700; color: #16a34a; }
 .location-cell { display: flex; align-items: center; gap: .4rem; }
 .flag-img      { width: 20px; height: 14px; border-radius: 2px; object-fit: cover; flex-shrink: 0; }
+.soft-ip       { color: var(--soft); font-size: .8rem; }
 
 /* Badge */
 .badge { display: inline-block; padding: .18rem .55rem; border-radius: 4px; font-size: .73rem; font-weight: 600; }
