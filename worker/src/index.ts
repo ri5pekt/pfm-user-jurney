@@ -206,6 +206,10 @@ async function drainBatch(): Promise<void> {
     const fxKey = process.env.FX_API_KEY?.trim() || null;
     const rates  = fxKey ? await getRates(fxKey) : null;
 
+    // stitch map: isolated session_id → prior attributed session_id
+    // Built during order processing so PPU events follow the same stitch.
+    const stitchMap = new Map<string, string>();
+
     for (const ev of orderEvents) {
       const meta       = ev.metadata!;
       const orderId    = String(meta.order_id);
@@ -222,13 +226,42 @@ async function drainBatch(): Promise<void> {
       );
       if (existing.rows.length > 0) continue;
 
+      // ── Email-based session stitching ────────────────────────────────────
+      // If this order arrived on an isolated session (e.g. Facebook IAB,
+      // login-redirect broke localStorage), look for the most recent session
+      // with the same billing email that hasn't been attributed to an order yet.
+      // This recovers the original traffic source for the purchase.
+      const billingEmail = typeof meta.billing_email === 'string'
+        ? meta.billing_email.trim().toLowerCase()
+        : '';
+
+      let targetSessionId = ev.session_id;
+
+      if (billingEmail) {
+        const prior = await pgPool.query(
+          `SELECT session_id FROM sessions
+           WHERE user_email  = $1
+             AND order_id    IS NULL
+             AND session_id  != $2
+             AND last_seen   > NOW() - INTERVAL '7 days'
+           ORDER BY last_seen DESC
+           LIMIT 1`,
+          [billingEmail, ev.session_id],
+        );
+        if (prior.rows.length > 0) {
+          targetSessionId = prior.rows[0].session_id as string;
+          stitchMap.set(ev.session_id, targetSessionId);
+          console.log(`[worker] email-stitch: order ${orderId} → session ${targetSessionId} (was ${ev.session_id})`);
+        }
+      }
+
       await pgPool.query(
         `UPDATE sessions
          SET order_id    = $1,
              revenue_usd = $2
          WHERE session_id = $3
            AND order_id IS NULL`,
-        [orderId, revenueUsd, ev.session_id],
+        [orderId, revenueUsd, targetSessionId],
       );
     }
 
@@ -239,13 +272,15 @@ async function drainBatch(): Promise<void> {
       const revenueUsd = rates ? toUsd(amount, currency, rates) : null;
       if (revenueUsd === null) continue;
 
-      // Add upsell revenue on top of the existing order revenue.
-      // COALESCE handles the rare case where ppu_accepted arrives before order_completed.
+      // If this session was stitched during order processing, apply PPU
+      // revenue to the same target session so it isn't split across two rows.
+      const targetSessionId = stitchMap.get(ev.session_id) ?? ev.session_id;
+
       await pgPool.query(
         `UPDATE sessions
          SET revenue_usd = COALESCE(revenue_usd, 0) + $1
          WHERE session_id = $2`,
-        [revenueUsd, ev.session_id],
+        [revenueUsd, targetSessionId],
       );
     }
   }
