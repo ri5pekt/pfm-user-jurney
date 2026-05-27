@@ -252,6 +252,12 @@ async function drainBatch(): Promise<void> {
           targetSessionId = prior.rows[0].session_id as string;
           stitchMap.set(ev.session_id, targetSessionId);
           console.log(`[worker] email-stitch: order ${orderId} → session ${targetSessionId} (was ${ev.session_id})`);
+
+          // Delete the isolated stub session and its events — it's just a cached
+          // thank-you page artifact with no real journey. The order now lives on
+          // the prior attributed session, so the stub has no useful data.
+          await pgPool.query(`DELETE FROM events  WHERE session_id = $1`, [ev.session_id]);
+          await pgPool.query(`DELETE FROM sessions WHERE session_id = $1`, [ev.session_id]);
         }
       }
 
