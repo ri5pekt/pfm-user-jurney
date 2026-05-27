@@ -258,22 +258,9 @@ async function drainBatch(): Promise<void> {
           await pgPool.query(`DELETE FROM sessions WHERE session_id = $1`, [ev.session_id]);
         }
       } else {
-        // No billing_email — stitching impossible. If this session is just an
-        // isolated thank-you page with no real journey (cached page artifact,
-        // login-redirect stub, etc.) drop it entirely rather than pollute the data.
-        const isStub = await pgPool.query(
-          `SELECT 1 FROM sessions
-           WHERE session_id = $1
-             AND page_count  = 1
-             AND entry_url   LIKE '%thank-you-order%'`,
-          [ev.session_id],
-        );
-        if (isStub.rows.length > 0) {
-          console.log(`[worker] drop stub: order ${orderId} on isolated thank-you session ${ev.session_id} (no billing_email)`);
-          await pgPool.query(`DELETE FROM events   WHERE session_id = $1`, [ev.session_id]);
-          await pgPool.query(`DELETE FROM sessions WHERE session_id = $1`, [ev.session_id]);
-          continue;
-        }
+        // No billing_email — can't stitch, but we must NOT drop the order.
+        // Keep it on the current session so revenue is always accounted for.
+        console.log(`[worker] no-email order ${orderId}: keeping on session ${ev.session_id} without stitch`);
       }
 
       await pgPool.query(
@@ -341,6 +328,8 @@ async function drainBatch(): Promise<void> {
   // are older than 2 minutes (enough time for order_completed to arrive).
   // These are orphan page_views left behind when stitching moved the order
   // to a prior session on a different session_id.
+  // Only delete thank-you stubs that have NO order and NO revenue —
+  // sessions with an order_id or revenue must never be removed here.
   await pgPool.query(
     `DELETE FROM events
      WHERE session_id IN (
@@ -348,6 +337,7 @@ async function drainBatch(): Promise<void> {
        WHERE page_count = 1
          AND entry_url  LIKE '%thank-you-order%'
          AND order_id   IS NULL
+         AND revenue_usd IS NULL
          AND first_seen < NOW() - INTERVAL '2 minutes'
      )`,
   );
@@ -356,6 +346,7 @@ async function drainBatch(): Promise<void> {
      WHERE page_count = 1
        AND entry_url  LIKE '%thank-you-order%'
        AND order_id   IS NULL
+       AND revenue_usd IS NULL
        AND first_seen < NOW() - INTERVAL '2 minutes'`,
   );
 
