@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { isBotRequest } from '../middleware/botFilter';
+import { isBotRequest, isBotIp } from '../middleware/botFilter';
 import { redisClient } from '../lib/redis';
 
 // Noise paths — internal tools, WooCommerce null products, etc.
@@ -61,6 +61,27 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   if (isBotRequest(req.headers['user-agent'])) return;
   if (isNoisyUrl(page_url)) return;
 
+  const ip = getClientIp(req);
+
+  // ── IP-based bot check ──────────────────────────────────────────────────
+  if (isBotIp(ip)) return;
+
+  // ── Rate limiting — max 60 events per IP per minute ────────────────────
+  // Protects against flood/scraper bots that spoof a real browser UA.
+  // Threshold is generous enough for power users (fast navigation, prefetch)
+  // but will catch automated tools sending dozens of events per second.
+  const RATE_LIMIT = Number(process.env.IP_RATE_LIMIT) || 60;
+  if (ip) {
+    const rateKey = `rate:${ip}`;
+    try {
+      const count = await redisClient.incr(rateKey);
+      if (count === 1) await redisClient.expire(rateKey, 60); // first hit sets 60s window
+      if (count > RATE_LIMIT) return; // over limit — drop silently
+    } catch {
+      // Redis error — don't block on rate limit failure
+    }
+  }
+
   const effective_session_id = session_id;
 
   // For order_completed: dedup by order_id — same order within 24h is silently dropped
@@ -93,8 +114,6 @@ collectRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       // Redis error — proceed without dedup rather than dropping the event
     }
   }
-
-  const ip = getClientIp(req);
 
   const event = JSON.stringify({
     session_id: effective_session_id,
