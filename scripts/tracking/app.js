@@ -1,4 +1,15 @@
-/* PFM User Journey Tracker — drop into WordPress <head> */
+/**
+ * PFM User Journey Tracker — reference copy (pure JS, no PHP).
+ *
+ * The production version lives in WordPress:
+ *   wp-content/themes/particleformen/lib/mixpanel.php → pfm_user_journey_tracker()
+ *
+ * The WordPress version is identical below, with one addition:
+ *   On non-cached WooCommerce pages (cart, checkout, order-received, my-account)
+ *   a PHP block injects `meta.user_email` for logged-in users before send() is called.
+ *
+ * Keep this file in sync with the WordPress version when making JS-side changes.
+ */
 (function () {
   var K = 'pfm_sid', E = 'pfm_sid_exp', CK = 'pfm_sid', TTL = 864e5, URL = 'https://uj.pfm-qa.com/p';
 
