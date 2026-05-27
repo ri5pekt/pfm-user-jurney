@@ -227,7 +227,7 @@ const total         = ref(0)
 const page          = ref(1)
 const limit         = 20
 const loading       = ref(false)
-const live          = ref(false)
+const live          = ref(true)
 let   liveTimer     = 0
 const filterChannel  = ref('')
 const filterSource   = ref('')
@@ -237,7 +237,7 @@ const searchOrderId = ref('')
 const searchEmail   = ref('')
 const showFilters   = ref(true)
 const minPages      = ref<number | null>(null)
-const ordersOnly    = ref(false)
+const ordersOnly    = ref(true)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -420,7 +420,17 @@ watch(
   { flush: 'post' },
 )
 
-onMounted(() => { applyRouteQuery(); load(); loadStats() })
+onMounted(() => {
+  applyRouteQuery()
+  load()
+  loadStats()
+  // start live polling since it's on by default
+  if (live.value) {
+    liveTimer = window.setInterval(() => {
+      if (page.value === 1) load()
+    }, 5000)
+  }
+})
 // Refresh data when navigating back from session detail (keep-alive restore)
 onActivated(() => { applyRouteQuery(); load(); loadStats() })
 onUnmounted(() => clearInterval(liveTimer))
