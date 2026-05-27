@@ -243,7 +243,7 @@ async function drainBatch(): Promise<void> {
            WHERE user_email  = $1
              AND order_id    IS NULL
              AND session_id  != $2
-             AND last_seen   > NOW() - INTERVAL '7 days'
+             AND last_seen   > NOW() - INTERVAL '24 hours'
            ORDER BY last_seen DESC
            LIMIT 1`,
           [billingEmail, ev.session_id],
