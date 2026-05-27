@@ -5,6 +5,7 @@ import { eventsRouter }   from './routes/events';
 import { sessionsRouter } from './routes/sessions';
 import { overviewRouter } from './routes/overview';
 import { funnelsRouter }  from './routes/funnels';
+import { usersRouter }    from './routes/users';
 
 const app  = express();
 const PORT = Number(process.env.PORT_ADMIN) || 3002;
@@ -21,6 +22,7 @@ app.use('/events',   eventsRouter);
 app.use('/sessions', sessionsRouter);
 app.use('/overview', overviewRouter);
 app.use('/funnels',  funnelsRouter);
+app.use('/users',    usersRouter);
 
 app.listen(PORT, () => {
   console.log(`[admin-api] listening on port ${PORT}`);

@@ -20,6 +20,18 @@
       >
         {{ tab.label }}
       </router-link>
+
+      <!-- Settings dropdown -->
+      <div class="tab-dropdown" :class="{ active: isSettingsActive }" @mouseenter="settingsOpen = true" @mouseleave="settingsOpen = false">
+        <span class="tab tab-dd-trigger" :class="{ active: isSettingsActive }">
+          Settings <span class="dd-caret">▾</span>
+        </span>
+        <div v-if="settingsOpen" class="dd-menu">
+          <router-link to="/settings/users" class="dd-item" active-class="dd-item-active" @click="settingsOpen = false">
+            Users
+          </router-link>
+        </div>
+      </div>
     </div>
 
     <!-- ── Content ───────────────────────────────────────────── -->
@@ -34,13 +46,15 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { ref, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 defineOptions({ name: 'DashboardView' })
 
 const auth   = useAuthStore()
 const router = useRouter()
+const route  = useRoute()
 
 const tabs = [
   { id: 'overview',  label: 'Overview'  },
@@ -48,6 +62,9 @@ const tabs = [
   { id: 'sessions',  label: 'Sessions'  },
   { id: 'funnels',   label: 'Funnels'   },
 ]
+
+const settingsOpen  = ref(false)
+const isSettingsActive = computed(() => route.path.startsWith('/settings'))
 
 function handleLogout() {
   auth.logout()
@@ -110,6 +127,7 @@ function handleLogout() {
   display: flex;
   gap: 0;
   flex-shrink: 0;
+  align-items: stretch;
 }
 
 .tab {
@@ -124,10 +142,52 @@ function handleLogout() {
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
   text-decoration: none;
+  display: flex;
+  align-items: center;
 }
 
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Settings dropdown */
+.tab-dropdown {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.tab-dd-trigger {
+  user-select: none;
+  gap: .3rem;
+}
+
+.dd-caret { font-size: .65rem; opacity: .6; }
+
+.dd-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+  z-index: 100;
+  padding: .3rem 0;
+  margin-top: 2px;
+}
+
+.dd-item {
+  display: block;
+  padding: .55rem 1rem;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--soft);
+  text-decoration: none;
+  transition: background .1s, color .1s;
+}
+.dd-item:hover    { background: #f8fafc; color: var(--text); }
+.dd-item-active   { color: var(--accent); background: #f0fdfb; }
 
 /* Content */
 .content {
