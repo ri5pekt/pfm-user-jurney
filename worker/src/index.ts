@@ -293,9 +293,39 @@ async function drainBatch(): Promise<void> {
       const revenueUsd = rates ? toUsd(amount, currency, rates) : null;
       if (revenueUsd === null) continue;
 
-      // If this session was stitched during order processing, apply PPU
-      // revenue to the same target session so it isn't split across two rows.
-      const targetSessionId = stitchMap.get(ev.session_id) ?? ev.session_id;
+      // 1. Same-batch stitch takes priority (order_completed processed in this run).
+      let targetSessionId = stitchMap.get(ev.session_id) ?? ev.session_id;
+
+      // 2. Cross-batch email stitch: if the PPU session is a thank-you stub
+      //    with no order and arrived in a different batch than its order_completed,
+      //    find the attributed session by email so revenue isn't orphaned.
+      if (targetSessionId === ev.session_id) {
+        const stubRow = await pgPool.query(
+          `SELECT s.session_id, s.user_email
+           FROM sessions s
+           WHERE s.session_id = $1
+             AND s.order_id   IS NULL
+             AND s.entry_url  LIKE '%thank-you-order%'`,
+          [ev.session_id],
+        );
+        if (stubRow.rows.length > 0 && stubRow.rows[0].user_email) {
+          const stubEmail = stubRow.rows[0].user_email as string;
+          const prior = await pgPool.query(
+            `SELECT session_id FROM sessions
+             WHERE user_email  = $1
+               AND order_id    IS NOT NULL
+               AND session_id  != $2
+               AND last_seen   > NOW() - INTERVAL '24 hours'
+             ORDER BY last_seen DESC
+             LIMIT 1`,
+            [stubEmail, ev.session_id],
+          );
+          if (prior.rows.length > 0) {
+            targetSessionId = prior.rows[0].session_id as string;
+            console.log(`[worker] ppu email-stitch: ${ev.session_id} → ${targetSessionId} (${stubEmail})`);
+          }
+        }
+      }
 
       await pgPool.query(
         `UPDATE sessions
