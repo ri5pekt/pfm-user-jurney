@@ -145,7 +145,10 @@
           </tr>
           <tr v-for="s in sessions" :key="s.session_id" class="row clickable" @click="openSession(s.session_id)">
             <td class="col-time">{{ formatTime(s.first_seen) }}</td>
-            <td class="col-session">{{ s.session_id.slice(0, 8) }}</td>
+            <td class="col-session">
+              <span class="session-id-short">{{ s.session_id.slice(0, 8) }}</span>
+              <span v-if="s.user_email" class="session-email">{{ s.user_email }}</span>
+            </td>
             <td class="col-pages">{{ s.page_count }}</td>
             <td class="col-location">
               <span v-if="s.country" class="location-cell">
@@ -206,6 +209,7 @@ interface Session {
   city:                 string | null
   order_id:             string | null
   revenue_usd:          string | null
+  user_email:           string | null
 }
 
 interface ChannelStat { channel: string; count: string }
@@ -562,6 +566,9 @@ td { padding: .65rem 1rem; vertical-align: middle; }
 /* Columns */
 .col-time     { color: var(--soft); white-space: nowrap; font-size: .8rem; }
 .col-session  { color: var(--accent); font-family: monospace; font-size: .85rem; font-weight: 600; }
+.col-session  { display: flex; flex-direction: column; gap: .1rem; }
+.session-id-short { color: var(--accent); font-family: monospace; font-size: .85rem; font-weight: 600; }
+.session-email    { color: var(--soft); font-family: inherit; font-size: .72rem; font-weight: 400; }
 .col-pages    { color: var(--soft); font-size: .8rem; text-align: center; }
 .col-location { font-size: .8rem; }
 .col-revenue  { font-size: .82rem; white-space: nowrap; }
