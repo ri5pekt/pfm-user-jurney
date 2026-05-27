@@ -359,6 +359,16 @@ async function drainBatch(): Promise<void> {
        AND first_seen < NOW() - INTERVAL '2 minutes'`,
   );
 
+  // ── Cleanup zero-page ghost sessions ────────────────────────────
+  // Sessions upserted when all their events were deduplicated away.
+  // Safe to delete after 2 minutes — no events will arrive for them.
+  await pgPool.query(
+    `DELETE FROM sessions
+     WHERE page_count = 0
+       AND order_id   IS NULL
+       AND first_seen < NOW() - INTERVAL '2 minutes'`,
+  );
+
   console.log(`[worker] inserted ${deduped.length} events (${events.length - deduped.length} deduped), upserted sessions`);
 }
 
