@@ -8,7 +8,6 @@ function normalizePath(url: string): string {
     let p = new URL(url).pathname;
     p = p.replace(/\/$/, '') || '/';
     // Strip numeric-only segments (order IDs, subscription IDs, etc.)
-    // e.g. /my-account/view-order/3875040 → /my-account/view-order
     p = p.replace(/\/\d+/g, '');
     return p || '/';
   } catch {
@@ -53,7 +52,6 @@ function pageType(path: string): string {
   if (path.startsWith('/lpage'))   return 'landing';
   if (path.startsWith('/product')) return 'product';
   if (path === '/')                return 'home';
-  // Post-purchase account pages — shown after Thank You in the funnel
   if (path.startsWith('/my-account/view-order') ||
       path.startsWith('/my-account/orders') ||
       path.startsWith('/my-account/view-subscription')) return 'postpurchase';
@@ -66,43 +64,85 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
     const start = req.query.start as string | undefined;
     const end   = req.query.end   as string | undefined;
 
-    // Build WHERE clause from date range
     const conditions: string[] = [];
     const values: unknown[]    = [];
-    if (start) { conditions.push(`first_seen >= $${values.push(start)}`); }
-    if (end)   { conditions.push(`first_seen <= $${values.push(end)}`);   }
-    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    if (start) { conditions.push(`s.first_seen >= $${values.push(start)}`); }
+    if (end)   { conditions.push(`s.first_seen <= $${values.push(end)}`);   }
+    const sessWhere = conditions.length ? 'WHERE ' + conditions.map(c => c.replace(/^s\./, '')).join(' AND ') : '';
+    const joinWhere = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    const whereRevenue   = conditions.length
-      ? `WHERE ${conditions.join(' AND ')} AND revenue_usd IS NOT NULL`
-      : 'WHERE revenue_usd IS NOT NULL';
-    const whereCountries = conditions.length
-      ? `WHERE ${conditions.join(' AND ')} AND country IS NOT NULL AND country <> ''`
-      : "WHERE country IS NOT NULL AND country <> ''";
+    // ── Run all heavy queries in parallel ────────────────────────────
+    // Previously: loaded all 35k sessions + 72k events into Node.js memory.
+    // Now: push all aggregation down to Postgres, return only summary rows.
+    const [statsRes, sourceAggRes, countriesRes, funnelRes, pagesRes] = await Promise.all([
 
-    const [sessionsRes, revenueRes, countriesRes] = await Promise.all([
-      pgPool.query<{ session_id: string; channel: string; source: string; revenue_usd: string | null; utm_campaign: string }>(
-        `SELECT session_id, channel, source, revenue_usd, utm_campaign FROM sessions ${where} ORDER BY first_seen DESC`,
+      // 1. Total sessions + revenue stats (1 row)
+      pgPool.query<{
+        total: string; total_revenue: string; aov: string; tracked_orders: string;
+      }>(
+        `SELECT COUNT(*)                                                    AS total,
+                COALESCE(SUM(revenue_usd), 0)::numeric                    AS total_revenue,
+                COALESCE(AVG(revenue_usd) FILTER (WHERE revenue_usd IS NOT NULL), 0)::numeric AS aov,
+                COUNT(*) FILTER (WHERE order_id IS NOT NULL)               AS tracked_orders
+         FROM sessions ${sessWhere}`,
         values,
       ),
-      pgPool.query<{ total_revenue: string; aov: string; tracked_orders: string }>(
-        `SELECT COALESCE(SUM(revenue_usd), 0)::numeric AS total_revenue,
-                COALESCE(AVG(revenue_usd), 0)::numeric AS aov,
-                COUNT(*)                               AS tracked_orders
-         FROM   sessions ${whereRevenue}`,
+
+      // 2. Source / channel / campaign aggregates (~20-100 rows, not 35k)
+      pgPool.query<{
+        source: string; channel: string; utm_campaign: string;
+        count: string; orders: string; revenue: string;
+      }>(
+        `SELECT COALESCE(source, 'direct')       AS source,
+                COALESCE(channel, 'direct')      AS channel,
+                COALESCE(utm_campaign, '')        AS utm_campaign,
+                COUNT(*)                          AS count,
+                COUNT(*) FILTER (WHERE order_id IS NOT NULL) AS orders,
+                COALESCE(SUM(revenue_usd), 0)::numeric       AS revenue
+         FROM sessions ${sessWhere}
+         GROUP BY 1, 2, 3
+         ORDER BY count DESC`,
         values,
       ),
+
+      // 3. Countries (30 rows)
       pgPool.query<{ country: string; count: string }>(
         `SELECT country, COUNT(*) AS count
-         FROM   sessions ${whereCountries}
-         GROUP  BY country
-         ORDER  BY count DESC
-         LIMIT  30`,
+         FROM sessions
+         WHERE country IS NOT NULL AND country <> '' ${conditions.length ? 'AND ' + conditions.map(c => c.replace(/^s\./, '')).join(' AND ') : ''}
+         GROUP BY country
+         ORDER BY count DESC
+         LIMIT 30`,
+        values,
+      ),
+
+      // 4. Funnel counts via SQL JOIN (1 row — no more loading 72k events)
+      pgPool.query<{ cart: string; checkout: string; thankyou: string }>(
+        `SELECT
+           COUNT(DISTINCT CASE WHEN e.page_url LIKE '%/cart%' OR e.page_url LIKE '%-cart%' THEN e.session_id END) AS cart,
+           COUNT(DISTINCT CASE WHEN e.page_url LIKE '%/checkout%'   THEN e.session_id END)                        AS checkout,
+           COUNT(DISTINCT CASE WHEN e.page_url LIKE '%thank-you%'   THEN e.session_id END)                        AS thankyou
+         FROM events e
+         INNER JOIN sessions s ON s.session_id = e.session_id
+         ${joinWhere}`,
+        values,
+      ),
+
+      // 5. Top page URLs by unique sessions (~100-200 rows, not 72k)
+      pgPool.query<{ page_url: string; count: string }>(
+        `SELECT e.page_url, COUNT(DISTINCT e.session_id) AS count
+         FROM events e
+         INNER JOIN sessions s ON s.session_id = e.session_id
+         WHERE e.event_type = 'page_view'
+         ${conditions.length ? 'AND ' + conditions.join(' AND ') : ''}
+         GROUP BY e.page_url
+         ORDER BY count DESC
+         LIMIT 200`,
         values,
       ),
     ]);
 
-    const total = sessionsRes.rows.length;
+    const total = parseInt(statsRes.rows[0].total, 10);
     if (total === 0) {
       res.json({ total: 0, totalRevenue: 0, aov: 0, trackedOrders: 0, countries: [],
         sources: [], landingPages: [], pages: [], productPages: [],
@@ -110,8 +150,20 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const sessionIds = sessionsRes.rows.map(r => r.session_id);
+    const totalRevenue  = parseFloat(statsRes.rows[0].total_revenue);
+    const aov           = parseFloat(statsRes.rows[0].aov);
+    const trackedOrders = parseInt(statsRes.rows[0].tracked_orders, 10);
+    const countries     = countriesRes.rows.map(r => ({
+      country: r.country,
+      count:   parseInt(r.count, 10),
+      pct:     Math.round(parseInt(r.count, 10) / total * 100),
+    }));
 
+    const cartCount     = parseInt(funnelRes.rows[0]?.cart     ?? '0', 10);
+    const checkoutCount = parseInt(funnelRes.rows[0]?.checkout ?? '0', 10);
+    const thankyouCount = parseInt(funnelRes.rows[0]?.thankyou ?? '0', 10);
+
+    // ── Build source → channel → campaign hierarchy from flat SQL rows ──
     const CHANNEL_LABELS: Record<string, string> = {
       paid_social:      'Paid Social',   paid_search:      'Paid Search',
       paid_shopping:    'Paid Shopping', paid_other:        'Paid Other',
@@ -121,110 +173,95 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       direct:           'Direct',
     };
 
-    // Count per source
-    const sourceCount    = new Map<string, { label: string; count: number }>();
-    const sourceRevenue  = new Map<string, number>();
-    const sourceOrders   = new Map<string, number>();
-    const sessionSrc     = new Map<string, string>(); // session_id → source key
-    const sessionCampaign = new Map<string, string>(); // session_id → utm_campaign
-    const sessionChannel  = new Map<string, string>(); // session_id → channel
-
-    // Nested: source → channel → { count, revenue, orders, campaigns }
     type CampAgg = { count: number; revenue: number; orders: number };
     type ChanAgg = { count: number; revenue: number; orders: number; camps: Map<string, CampAgg> };
-    const srcChans = new Map<string, Map<string, ChanAgg>>();
+    const srcMap = new Map<string, { count: number; orders: number; revenue: number; chans: Map<string, ChanAgg> }>();
 
-    for (const s of sessionsRes.rows) {
-      const key   = s.source || 'direct';
-      const label = !s.source || s.source === 'direct' ? 'Direct' : s.source;
-      const chan  = (s.channel || 'direct').trim();
-      const camp  = (s.utm_campaign || '').trim();
+    for (const row of sourceAggRes.rows) {
+      const src  = row.source || 'direct';
+      const chan  = row.channel || 'direct';
+      const camp  = row.utm_campaign || '';
+      const cnt   = parseInt(row.count, 10);
+      const ords  = parseInt(row.orders, 10);
+      const rev   = parseFloat(row.revenue);
 
-      if (!sourceCount.has(key)) sourceCount.set(key, { label, count: 0 });
-      sourceCount.get(key)!.count++;
-      sessionSrc.set(s.session_id, key);
-      sessionCampaign.set(s.session_id, camp);
-      sessionChannel.set(s.session_id, chan);
+      if (!srcMap.has(src)) srcMap.set(src, { count: 0, orders: 0, revenue: 0, chans: new Map() });
+      const srcAgg = srcMap.get(src)!;
+      srcAgg.count   += cnt;
+      srcAgg.orders  += ords;
+      srcAgg.revenue += rev;
 
-      if (s.revenue_usd) {
-        sourceRevenue.set(key, (sourceRevenue.get(key) ?? 0) + parseFloat(s.revenue_usd));
-      }
+      if (!srcAgg.chans.has(chan)) srcAgg.chans.set(chan, { count: 0, orders: 0, revenue: 0, camps: new Map() });
+      const chanAgg = srcAgg.chans.get(chan)!;
+      chanAgg.count   += cnt;
+      chanAgg.orders  += ords;
+      chanAgg.revenue += rev;
 
-      // Nested channel → campaign aggregation
-      if (!srcChans.has(key)) srcChans.set(key, new Map());
-      const chanMap = srcChans.get(key)!;
-      if (!chanMap.has(chan)) chanMap.set(chan, { count: 0, revenue: 0, orders: 0, camps: new Map() });
-      const chanAgg = chanMap.get(chan)!;
-      chanAgg.count++;
-      if (s.revenue_usd) chanAgg.revenue += parseFloat(s.revenue_usd);
-      if (!chanAgg.camps.has(camp)) chanAgg.camps.set(camp, { count: 0, revenue: 0, orders: 0 });
-      chanAgg.camps.get(camp)!.count++;
-      if (s.revenue_usd) chanAgg.camps.get(camp)!.revenue += parseFloat(s.revenue_usd);
+      if (!chanAgg.camps.has(camp)) chanAgg.camps.set(camp, { count: 0, orders: 0, revenue: 0 });
+      const campAgg = chanAgg.camps.get(camp)!;
+      campAgg.count   += cnt;
+      campAgg.orders  += ords;
+      campAgg.revenue += rev;
     }
 
-    // Load all events for these sessions
-    const eventsRes = await pgPool.query<{ session_id: string; page_url: string }>(
-      `SELECT session_id, page_url FROM events WHERE session_id = ANY($1) ORDER BY session_id, timestamp`,
-      [sessionIds],
-    );
+    const pct = (n: number) => Math.round((n / total) * 100);
 
-    const sessionEvents = new Map<string, string[]>();
-    for (const ev of eventsRes.rows) {
-      if (!sessionEvents.has(ev.session_id)) sessionEvents.set(ev.session_id, []);
-      sessionEvents.get(ev.session_id)!.push(ev.page_url);
+    const sources = Array.from(srcMap.entries())
+      .map(([id, { count, orders, revenue, chans }]) => {
+        const label     = !id || id === 'direct' ? 'Direct' : id;
+        const convRate  = count > 0 ? Math.round(orders / count * 1000) / 10 : 0;
+
+        const breakdown = Array.from(chans.entries())
+          .map(([chan, agg]) => {
+            const chanConvRate = agg.count > 0 ? Math.round(agg.orders / agg.count * 1000) / 10 : 0;
+            const allCamps = Array.from(agg.camps.entries())
+              .map(([camp, c]) => ({
+                label:   camp || '(not set)',
+                count:   c.count,
+                orders:  c.orders,
+                revenue: Math.round(c.revenue * 100) / 100,
+                pct:     Math.round((c.count / agg.count) * 100),
+              }))
+              .sort((a, b) => b.count - a.count);
+            const campBreakdown = allCamps.some(c => c.label !== '(not set)') ? allCamps : [];
+            return {
+              label:    CHANNEL_LABELS[chan] ?? chan,
+              key:      chan,
+              count:    agg.count,
+              orders:   agg.orders,
+              revenue:  Math.round(agg.revenue * 100) / 100,
+              pct:      Math.round((agg.count / count) * 100),
+              convRate: chanConvRate,
+              breakdown: campBreakdown,
+            };
+          })
+          .sort((a, b) => b.count - a.count);
+
+        const hasNamedCampaigns   = breakdown.some(ch => ch.breakdown && ch.breakdown.length > 0);
+        const hasMultipleChannels = breakdown.length > 1;
+        const finalBreakdown      = (hasNamedCampaigns || hasMultipleChannels) ? breakdown : [];
+
+        return { id, label, count, pct: pct(count), orders, convRate, revenue: Math.round(revenue * 100) / 100, breakdown: finalBreakdown };
+      })
+      .sort((a, b) => b.count - a.count);
+
+    // ── Aggregate page visits from compact SQL result (~200 rows) ────
+    const landingCount      = new Map<string, number>();
+    const pageCount         = new Map<string, number>();
+    const productCount      = new Map<string, number>();
+    const postPurchaseCount = new Map<string, number>();
+
+    for (const row of pagesRes.rows) {
+      const path  = normalizePath(row.page_url);
+      const count = parseInt(row.count, 10);
+      const type  = pageType(path);
+
+      if      (type === 'landing')      landingCount.set(path,      (landingCount.get(path)      ?? 0) + count);
+      else if (type === 'home' || type === 'page') pageCount.set(path, (pageCount.get(path) ?? 0) + count);
+      else if (type === 'product')      productCount.set(path,      (productCount.get(path)      ?? 0) + count);
+      else if (type === 'postpurchase') postPurchaseCount.set(path, (postPurchaseCount.get(path) ?? 0) + count);
     }
 
-    const landingCount       = new Map<string, number>();
-    const pageCount          = new Map<string, number>();
-    const productCount       = new Map<string, number>();
-    const postPurchaseCount  = new Map<string, number>();
-    let cartCount     = 0;
-    let checkoutCount = 0;
-    let thankyouCount = 0;
-
-    for (const sid of sessionIds) {
-      const urls    = sessionEvents.get(sid) ?? [];
-      const visited = new Set<string>();
-      for (const url of urls) visited.add(normalizePath(url));
-
-      let hadCart = false, hadCheckout = false, hadThankyou = false;
-      for (const path of visited) {
-        const type = pageType(path);
-        if      (type === 'landing')                 landingCount.set(path,      (landingCount.get(path)      ?? 0) + 1);
-        else if (type === 'home' || type === 'page') pageCount.set(path,         (pageCount.get(path)         ?? 0) + 1);
-        else if (type === 'product')                 productCount.set(path,      (productCount.get(path)      ?? 0) + 1);
-        else if (type === 'postpurchase')             postPurchaseCount.set(path, (postPurchaseCount.get(path) ?? 0) + 1);
-        else if (type === 'cart')                    hadCart     = true;
-        else if (type === 'checkout')                hadCheckout = true;
-        else if (type === 'thankyou')                hadThankyou = true;
-      }
-      if (hadCart)     cartCount++;
-      if (hadCheckout) checkoutCount++;
-      if (hadThankyou) {
-        thankyouCount++;
-        const srcKey  = sessionSrc.get(sid)     ?? 'direct';
-        const chanKey = sessionChannel.get(sid)  ?? 'direct';
-        const camp    = sessionCampaign.get(sid) ?? '';
-        sourceOrders.set(srcKey, (sourceOrders.get(srcKey) ?? 0) + 1);
-        const chanAgg = srcChans.get(srcKey)?.get(chanKey);
-        if (chanAgg) {
-          chanAgg.orders++;
-          const campAgg = chanAgg.camps.get(camp);
-          if (campAgg) campAgg.orders++;
-        }
-      }
-    }
-
-    const totalRevenue   = parseFloat(revenueRes.rows[0]?.total_revenue  ?? '0');
-    const aov            = parseFloat(revenueRes.rows[0]?.aov           ?? '0');
-    const trackedOrders  = parseInt(revenueRes.rows[0]?.tracked_orders  ?? '0', 10);
-    const countries    = countriesRes.rows.map(r => ({
-      country: r.country,
-      count:   parseInt(r.count, 10),
-      pct:     Math.round(parseInt(r.count, 10) / total * 100),
-    }));
-
-    const pct   = (n: number) => Math.round((n / total) * 100);
     const toArr = (m: Map<string, number>) =>
       Array.from(m.entries())
         .map(([path, count]) => ({ id: path, label: pathLabel(path), type: pageType(path), count, pct: pct(count) }))
@@ -236,51 +273,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       aov:           Math.round(aov * 100) / 100,
       trackedOrders,
       countries,
-      sources: Array.from(sourceCount.entries())
-        .map(([id, { label, count }]) => {
-          const orders   = sourceOrders.get(id) ?? 0;
-          const convRate = count > 0 ? Math.round(orders / count * 1000) / 10 : 0;
-          const revenue  = Math.round((sourceRevenue.get(id) ?? 0) * 100) / 100;
-
-          // Build channel-level breakdown, each channel carrying its own campaign breakdown
-          const chanMap = srcChans.get(id);
-          const breakdown = chanMap
-            ? Array.from(chanMap.entries())
-                .map(([chan, agg]) => {
-                  const chanConvRate = agg.count > 0 ? Math.round(agg.orders / agg.count * 1000) / 10 : 0;
-                  const allCamps = Array.from(agg.camps.entries())
-                    .map(([camp, c]) => ({
-                      label:   camp || '(not set)',
-                      count:   c.count,
-                      orders:  c.orders,
-                      revenue: Math.round(c.revenue * 100) / 100,
-                      pct:     Math.round((c.count / agg.count) * 100),
-                    }))
-                    .sort((a, b) => b.count - a.count);
-                  // Only include campaign breakdown if there are named campaigns
-                  const campBreakdown = allCamps.some(c => c.label !== '(not set)') ? allCamps : [];
-                  return {
-                    label:    CHANNEL_LABELS[chan] ?? chan,
-                    key:      chan,   // raw DB value for session filtering
-                    count:    agg.count,
-                    orders:   agg.orders,
-                    revenue:  Math.round(agg.revenue * 100) / 100,
-                    pct:      Math.round((agg.count / count) * 100),
-                    convRate: chanConvRate,
-                    breakdown: campBreakdown,
-                  };
-                })
-                .sort((a, b) => b.count - a.count)
-            : [];
-
-          // Only expose channel breakdown if the source has more than one channel OR has named campaigns
-          const hasNamedCampaigns = breakdown.some(ch => ch.breakdown && ch.breakdown.length > 0);
-          const hasMultipleChannels = breakdown.length > 1;
-          const finalBreakdown = (hasNamedCampaigns || hasMultipleChannels) ? breakdown : [];
-
-          return { id, label, count, pct: pct(count), orders, convRate, revenue, breakdown: finalBreakdown };
-        })
-        .sort((a, b) => b.count - a.count),
+      sources,
       landingPages:      toArr(landingCount),
       pages:             toArr(pageCount),
       productPages:      toArr(productCount),
@@ -301,7 +294,6 @@ overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> =
     const minPages = Math.max(2, parseInt(req.query.min_pages as string) || 2);
     const limit    = Math.min(1000, parseInt(req.query.limit as string) || 300);
 
-    // Load multi-page sessions ordered by recency
     const sessionsRes = await pgPool.query<{
       session_id: string; channel: string; source: string;
     }>(
@@ -319,9 +311,7 @@ overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> =
     }
 
     const sessionIds = sessionsRes.rows.map(r => r.session_id);
-    const sessionMeta = new Map(sessionsRes.rows.map(r => [r.session_id, r]));
 
-    // Load events for these sessions
     const eventsRes = await pgPool.query<{
       session_id: string; page_url: string; timestamp: string;
     }>(
@@ -332,7 +322,6 @@ overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> =
       [sessionIds],
     );
 
-    // Group events by session
     const sessionEvents = new Map<string, { page_url: string; ts: number }[]>();
     for (const ev of eventsRes.rows) {
       if (!sessionEvents.has(ev.session_id)) sessionEvents.set(ev.session_id, []);
@@ -351,7 +340,6 @@ overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> =
       const events = sessionEvents.get(session.session_id) ?? [];
       if (events.length === 0) continue;
 
-      // Deduplicate consecutive same-path events within 5s
       const paths: string[] = [];
       let lastPath = '';
       let lastTs   = 0;
@@ -364,24 +352,20 @@ overviewRouter.get('/flow', async (req: Request, res: Response): Promise<void> =
       }
       if (paths.length === 0) continue;
 
-      // Source node
       const srcId    = `src:${session.channel}:${session.source}`;
       const srcLabel = session.source === 'direct' ? 'Direct' : session.source;
       nodeCount.set(srcId, (nodeCount.get(srcId) ?? 0) + 1);
       nodeType.set(srcId,  'source');
       nodeLabel.set(srcId, srcLabel);
 
-      // First page
       const firstId = `page:${paths[0]}`;
       nodeCount.set(firstId, (nodeCount.get(firstId) ?? 0) + 1);
       nodeType.set(firstId,  pageType(paths[0]));
       nodeLabel.set(firstId, pathLabel(paths[0]));
 
-      // Source → first page edge
       const e0 = `${srcId}||${firstId}`;
       edgeCount.set(e0, (edgeCount.get(e0) ?? 0) + 1);
 
-      // Page → page edges
       for (let i = 1; i < paths.length; i++) {
         const fromId = `page:${paths[i - 1]}`;
         const toId   = `page:${paths[i]}`;

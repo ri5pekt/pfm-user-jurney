@@ -34,7 +34,7 @@ sessionsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   if (user_email) { params.push(`%${user_email}%`); conditions.push(`user_email ILIKE $${params.length}`); }
   if (min_pages > 0) { params.push(min_pages); conditions.push(`page_count >= $${params.length}`); }
   if (orders_only) {
-    conditions.push(`session_id IN (SELECT DISTINCT session_id FROM events WHERE page_url LIKE '%/thank-you-order%')`);
+    conditions.push(`order_id IS NOT NULL`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 

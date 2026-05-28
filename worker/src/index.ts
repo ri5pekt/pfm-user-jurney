@@ -7,7 +7,7 @@ import { getRates, toUsd } from './lib/fx';
 const QUEUE_KEY    = process.env.REDIS_QUEUE_KEY    || 'events_queue';
 const BATCH_SIZE   = Number(process.env.WORKER_BATCH_SIZE)   || 100;
 const INTERVAL_MS  = Number(process.env.WORKER_INTERVAL_MS)  || 3000;
-const CLEANUP_INTERVAL_MS = 60_000; // run expensive cleanup queries once per minute
+const CLEANUP_INTERVAL_MS = 600_000; // run expensive cleanup queries once per 10 minutes
 
 // Max seconds between two events on the same path to be considered a redirect/variant
 const DEDUP_WINDOW_MS = 5000;
@@ -106,30 +106,85 @@ async function drainBatch(): Promise<void> {
   }
 
   // ── Upsert sessions ──────────────────────────────────────────────
-  // First-ever INSERT sets attribution + geo.
-  // Subsequent events (ON CONFLICT) update timing and page count.
-  // Attribution upgrade: if the session was previously "direct" (or had no
-  // utm_campaign) and this event carries richer attribution, promote it.
-  // This handles cases where the landing page lost UTMs via a redirect but
-  // a subsequent page in the same session carries the original UTMs.
+  // Pre-aggregate events per session_id so we can do a single batched
+  // unnest() INSERT instead of N individual round-trips to Postgres.
+  // When the same session_id appears multiple times in a batch, we keep
+  // the earliest timestamp for first_seen, latest for last_seen, sum the
+  // page_count increment, and promote attribution if a later event in the
+  // same batch carries a richer signal than the earlier one.
+  interface SessionRow {
+    first_seen: string; last_seen: string;
+    entry_url: string; referrer: string;
+    source: string; medium: string; channel: string;
+    placement: string; campaign_id: string;
+    utm_source: string; utm_medium: string; utm_campaign: string;
+    page_count_inc: number;
+    ip: string | null;
+    country: string | null; state: string | null;
+    state_name: string | null; city: string | null;
+    attribution_method: string;
+  }
+  const sessionAgg = new Map<string, SessionRow>();
+
   for (const ev of deduped) {
     const attr       = parseAttribution(ev.page_url, ev.referrer || '');
     const geo        = geoCache.get(ev.ip) ?? null;
     const isPageView = (ev.event_type || 'page_view') === 'page_view';
+    const ts         = ev.timestamp || new Date().toISOString();
+
+    const existing = sessionAgg.get(ev.session_id);
+    if (!existing) {
+      sessionAgg.set(ev.session_id, {
+        first_seen: ts, last_seen: ts,
+        entry_url: ev.page_url, referrer: ev.referrer || '',
+        source: attr.source, medium: attr.medium, channel: attr.channel,
+        placement: attr.placement, campaign_id: attr.campaign_id,
+        utm_source: attr.utm_source, utm_medium: attr.utm_medium, utm_campaign: attr.utm_campaign,
+        page_count_inc: isPageView ? 1 : 0,
+        ip: ev.ip || null,
+        country: geo?.country ?? null, state: geo?.state ?? null,
+        state_name: geo?.state_name ?? null, city: geo?.city ?? null,
+        attribution_method: attr.attribution_method,
+      });
+    } else {
+      if (ts < existing.first_seen) existing.first_seen = ts;
+      if (ts > existing.last_seen)  existing.last_seen  = ts;
+      if (isPageView) existing.page_count_inc++;
+      // Promote attribution within the batch if this event has a richer signal
+      if (existing.source === 'direct' && attr.source !== 'direct') {
+        existing.source = attr.source; existing.medium = attr.medium;
+        existing.channel = attr.channel; existing.utm_source = attr.utm_source;
+        existing.utm_medium = attr.utm_medium;
+        existing.attribution_method = attr.attribution_method;
+      }
+      if (!existing.utm_campaign && attr.utm_campaign) {
+        existing.utm_campaign = attr.utm_campaign;
+      }
+    }
+  }
+
+  const sessRows  = Array.from(sessionAgg.values());
+  const sessIds   = Array.from(sessionAgg.keys());
+
+  if (sessRows.length > 0) {
     await pgPool.query(
       `INSERT INTO sessions
          (session_id, first_seen, last_seen, entry_url, referrer,
           source, medium, channel, placement, campaign_id,
           utm_source, utm_medium, utm_campaign, page_count,
-          ip, country, state, state_name, city,
-          attribution_method)
-       VALUES ($1,$2,$2,$3,$4, $5,$6,$7,$8,$9, $10,$11,$12, $18::int, $13,$14,$15,$16,$17, $19)
+          ip, country, state, state_name, city, attribution_method)
+       SELECT * FROM unnest(
+         $1::text[], $2::timestamptz[], $3::timestamptz[], $4::text[], $5::text[],
+         $6::text[], $7::text[], $8::text[], $9::text[], $10::text[],
+         $11::text[], $12::text[], $13::text[], $14::int[],
+         $15::text[], $16::text[], $17::text[], $18::text[], $19::text[], $20::text[]
+       ) AS t(session_id, first_seen, last_seen, entry_url, referrer,
+              source, medium, channel, placement, campaign_id,
+              utm_source, utm_medium, utm_campaign, page_count,
+              ip, country, state, state_name, city, attribution_method)
        ON CONFLICT (session_id) DO UPDATE
          SET last_seen  = GREATEST(sessions.last_seen, EXCLUDED.last_seen),
-             page_count = sessions.page_count + $18::int,
-
-             -- Promote source/channel if session was previously unattributed (direct)
-             -- and this event carries a richer signal
+             page_count = sessions.page_count + EXCLUDED.page_count,
              source      = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
                                 THEN EXCLUDED.source      ELSE sessions.source      END,
              medium      = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
@@ -140,50 +195,55 @@ async function drainBatch(): Promise<void> {
                                 THEN EXCLUDED.utm_source  ELSE sessions.utm_source  END,
              utm_medium  = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
                                 THEN EXCLUDED.utm_medium  ELSE sessions.utm_medium  END,
-
-             -- Promote attribution_method alongside source/channel
              attribution_method = CASE WHEN sessions.source = 'direct' AND EXCLUDED.source <> 'direct'
                                        THEN EXCLUDED.attribution_method
                                        ELSE sessions.attribution_method END,
-
-             -- Promote utm_campaign independently: upgrade any session missing it
-             -- (regardless of source) if this event has one
              utm_campaign = CASE WHEN (sessions.utm_campaign IS NULL OR sessions.utm_campaign = '')
                                       AND EXCLUDED.utm_campaign <> ''
                                  THEN EXCLUDED.utm_campaign ELSE sessions.utm_campaign END`,
       [
-        ev.session_id,
-        ev.timestamp || new Date().toISOString(),
-        ev.page_url,
-        ev.referrer || '',
-        attr.source,  attr.medium,  attr.channel,
-        attr.placement, attr.campaign_id,
-        attr.utm_source, attr.utm_medium, attr.utm_campaign,
-        ev.ip || null,
-        geo?.country    ?? null,
-        geo?.state      ?? null,
-        geo?.state_name ?? null,
-        geo?.city       ?? null,
-        isPageView ? 1 : 0,
-        attr.attribution_method,
+        sessIds,
+        sessRows.map(r => r.first_seen),
+        sessRows.map(r => r.last_seen),
+        sessRows.map(r => r.entry_url),
+        sessRows.map(r => r.referrer),
+        sessRows.map(r => r.source),
+        sessRows.map(r => r.medium),
+        sessRows.map(r => r.channel),
+        sessRows.map(r => r.placement),
+        sessRows.map(r => r.campaign_id),
+        sessRows.map(r => r.utm_source),
+        sessRows.map(r => r.utm_medium),
+        sessRows.map(r => r.utm_campaign),
+        sessRows.map(r => r.page_count_inc),
+        sessRows.map(r => r.ip),
+        sessRows.map(r => r.country),
+        sessRows.map(r => r.state),
+        sessRows.map(r => r.state_name),
+        sessRows.map(r => r.city),
+        sessRows.map(r => r.attribution_method),
       ],
     );
   }
 
   // ── Enrich sessions with user email ─────────────────────────────
-  // Sources (in priority order):
-  //  1. page_view metadata.user_email — injected by PHP for logged-in users on
-  //     non-cached WooCommerce pages (cart, checkout, thank-you, my-account)
-  //  2. order_completed metadata.billing_email — billing address email present
-  //     for both logged-in and guest checkout orders
+  // Batch all email updates into a single query using unnest().
+  const emailUpdates: { session_id: string; email: string }[] = [];
   for (const ev of deduped) {
     const email =
       (typeof ev.metadata?.user_email    === 'string' ? ev.metadata.user_email.trim().toLowerCase()    : '') ||
       (typeof ev.metadata?.billing_email === 'string' ? ev.metadata.billing_email.trim().toLowerCase() : '');
     if (!email) continue;
+    emailUpdates.push({ session_id: ev.session_id, email });
+  }
+  if (emailUpdates.length > 0) {
     await pgPool.query(
-      `UPDATE sessions SET user_email = $1 WHERE session_id = $2 AND (user_email IS NULL OR user_email = '')`,
-      [email, ev.session_id],
+      `UPDATE sessions s
+       SET user_email = u.email
+       FROM unnest($1::text[], $2::text[]) AS u(session_id, email)
+       WHERE s.session_id = u.session_id
+         AND (s.user_email IS NULL OR s.user_email = '')`,
+      [emailUpdates.map(u => u.session_id), emailUpdates.map(u => u.email)],
     );
   }
 
