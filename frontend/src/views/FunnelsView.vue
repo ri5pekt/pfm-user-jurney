@@ -6,6 +6,13 @@
       <h1 class="page-title">Funnels</h1>
 
       <div class="date-bar">
+        <!-- Timezone selector -->
+        <select v-model="tzId" class="ctrl-tz">
+          <option value="IL">🕐 IL</option>
+          <option value="NY">🗽 NY</option>
+          <option value="UTC">🌐 UTC</option>
+        </select>
+
         <button
           v-for="p in PRESETS"
           :key="p.id"
@@ -22,6 +29,7 @@
           auto-apply
           :close-on-auto-apply="true"
           format="MM/dd HH:mm"
+          :timezone="currentZone"
           class="dp-range"
           @update:model-value="onRangePick"
         />
@@ -123,6 +131,32 @@ interface ComputeResponse { primary: FunnelResult; compare?: FunnelResult }
 
 defineOptions({ name: 'FunnelsView' })
 
+/* ── Timezone ─────────────────────────────────────── */
+type TzKey = 'IL' | 'NY' | 'UTC'
+const ZONES: Record<TzKey, { label: string; iana: string }> = {
+  IL:  { label: 'IL',  iana: 'Asia/Jerusalem'   },
+  NY:  { label: 'NY',  iana: 'America/New_York'  },
+  UTC: { label: 'UTC', iana: 'UTC'               },
+}
+const tzId        = ref<TzKey>('IL')
+const currentZone = computed(() => ZONES[tzId.value].iana)
+
+function tzOffsetMs(zone: string, at: Date = new Date()): number {
+  const fmt = (z: string) => at.toLocaleString('en-US', {
+    timeZone: z, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  })
+  return Date.parse(fmt(zone)) - Date.parse(fmt('UTC'))
+}
+function startOfDayInZone(zone: string, daysAgo = 0): Date {
+  const now  = new Date()
+  const off  = tzOffsetMs(zone, now)
+  const fake = new Date(now.getTime() + off)
+  fake.setUTCHours(0, 0, 0, 0)
+  if (daysAgo) fake.setUTCDate(fake.getUTCDate() - daysAgo)
+  return new Date(fake.getTime() - off)
+}
+
 /* ── Date range ───────────────────────────────────── */
 type PresetId = '24h' | '7d' | '30d' | 'custom'
 const PRESETS = [
@@ -132,16 +166,14 @@ const PRESETS = [
   { id: 'custom' as PresetId, label: 'Custom' },
 ]
 const preset      = ref<PresetId>('7d')
-const customRange = ref<[Date, Date]>([startOfDay(7), new Date()])
+const customRange = ref<[Date, Date]>([startOfDayInZone(currentZone.value, 7), new Date()])
 
-function startOfDay(daysAgo = 0): Date {
-  const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(0, 0, 0, 0); return d
-}
 function getRange() {
-  const now = new Date()
+  const now  = new Date()
+  const zone = currentZone.value
   if (preset.value === '24h')  return { start: new Date(now.getTime() - 86_400_000).toISOString(), end: now.toISOString() }
-  if (preset.value === '7d')   return { start: startOfDay(7).toISOString(),  end: now.toISOString() }
-  if (preset.value === '30d')  return { start: startOfDay(30).toISOString(), end: now.toISOString() }
+  if (preset.value === '7d')   return { start: startOfDayInZone(zone, 7).toISOString(),  end: now.toISOString() }
+  if (preset.value === '30d')  return { start: startOfDayInZone(zone, 30).toISOString(), end: now.toISOString() }
   const [s, e] = customRange.value
   return { start: s?.toISOString() ?? '', end: e?.toISOString() ?? now.toISOString() }
 }
@@ -208,6 +240,13 @@ async function compute() {
 .page-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; flex-wrap: wrap; gap: .6rem; }
 .page-title  { font-size: 1.25rem; font-weight: 700; margin: 0; }
 .date-bar    { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.ctrl-tz {
+  padding: .28rem .55rem; font-size: .8rem; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  cursor: pointer; height: 28px;
+}
+.ctrl-tz:focus { outline: none; border-color: var(--accent); }
+
 .preset-btn  {
   padding: .28rem .7rem; font-size: .8rem; border-radius: 6px;
   background: var(--surface); border: 1px solid var(--border); color: var(--soft); cursor: pointer;
