@@ -58,11 +58,24 @@ function pageType(path: string): string {
   return 'page';
 }
 
+// Simple in-memory cache — avoids re-running heavy JOIN queries on every 30-second poll.
+// Key: "start|end", value: { data, expiresAt }
+const cache = new Map<string, { data: unknown; expiresAt: number }>();
+const CACHE_TTL_MS = 45_000; // 45 seconds
+
 // GET /overview/funnel?start=ISO&end=ISO
 overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void> => {
   try {
     const start = req.query.start as string | undefined;
     const end   = req.query.end   as string | undefined;
+
+    // Serve from cache if available and fresh
+    const cacheKey = `${start ?? ''}|${end ?? ''}`;
+    const cached = cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.json(cached.data);
+      return;
+    }
 
     const conditions: string[] = [];
     const values: unknown[]    = [];
@@ -267,7 +280,7 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
         .map(([path, count]) => ({ id: path, label: pathLabel(path), type: pageType(path), count, pct: pct(count) }))
         .sort((a, b) => b.count - a.count);
 
-    res.json({
+    const result = {
       total,
       totalRevenue:  Math.round(totalRevenue * 100) / 100,
       aov:           Math.round(aov * 100) / 100,
@@ -281,7 +294,10 @@ overviewRouter.get('/funnel', async (req: Request, res: Response): Promise<void>
       cart:     { count: cartCount,     pct: pct(cartCount) },
       checkout: { count: checkoutCount, pct: pct(checkoutCount) },
       thankyou: { count: thankyouCount, pct: pct(thankyouCount) },
-    });
+    };
+
+    cache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
+    res.json(result);
   } catch (err) {
     console.error('[admin-api] /overview/funnel error:', err);
     res.status(500).json({ error: 'Internal server error' });
