@@ -4,12 +4,15 @@ import { parseAttribution } from './lib/attribution';
 import { fetchGeoForIp } from './lib/geo';
 import { getRates, toUsd } from './lib/fx';
 
-const QUEUE_KEY  = process.env.REDIS_QUEUE_KEY  || 'events_queue';
-const BATCH_SIZE = Number(process.env.WORKER_BATCH_SIZE)  || 100;
-const INTERVAL_MS = Number(process.env.WORKER_INTERVAL_MS) || 3000;
+const QUEUE_KEY    = process.env.REDIS_QUEUE_KEY    || 'events_queue';
+const BATCH_SIZE   = Number(process.env.WORKER_BATCH_SIZE)   || 100;
+const INTERVAL_MS  = Number(process.env.WORKER_INTERVAL_MS)  || 3000;
+const CLEANUP_INTERVAL_MS = 60_000; // run expensive cleanup queries once per minute
 
 // Max seconds between two events on the same path to be considered a redirect/variant
 const DEDUP_WINDOW_MS = 5000;
+
+let lastCleanupAt = 0;
 
 interface RawEvent {
   session_id:  string;
@@ -323,42 +326,42 @@ async function drainBatch(): Promise<void> {
     }
   }
 
-  // ── Cleanup lingering thank-you stubs ───────────────────────────
-  // Remove isolated single-page thank-you sessions that have no order and
-  // are older than 2 minutes (enough time for order_completed to arrive).
-  // These are orphan page_views left behind when stitching moved the order
-  // to a prior session on a different session_id.
-  // Only delete thank-you stubs that have NO order and NO revenue —
-  // sessions with an order_id or revenue must never be removed here.
-  await pgPool.query(
-    `DELETE FROM events
-     WHERE session_id IN (
-       SELECT session_id FROM sessions
+  // ── Periodic cleanup (throttled to once per minute) ─────────────
+  // These queries use LIKE '%thank-you-order%' which can't fully use
+  // a B-tree index, so we run them infrequently to avoid CPU spikes.
+  const now = Date.now();
+  if (now - lastCleanupAt >= CLEANUP_INTERVAL_MS) {
+    lastCleanupAt = now;
+
+    // Delete thank-you stubs with no order and no revenue.
+    await pgPool.query(
+      `DELETE FROM events
+       WHERE session_id IN (
+         SELECT session_id FROM sessions
+         WHERE page_count = 1
+           AND entry_url  LIKE '%thank-you-order%'
+           AND order_id   IS NULL
+           AND revenue_usd IS NULL
+           AND first_seen < NOW() - INTERVAL '2 minutes'
+       )`,
+    );
+    await pgPool.query(
+      `DELETE FROM sessions
        WHERE page_count = 1
          AND entry_url  LIKE '%thank-you-order%'
          AND order_id   IS NULL
          AND revenue_usd IS NULL
-         AND first_seen < NOW() - INTERVAL '2 minutes'
-     )`,
-  );
-  await pgPool.query(
-    `DELETE FROM sessions
-     WHERE page_count = 1
-       AND entry_url  LIKE '%thank-you-order%'
-       AND order_id   IS NULL
-       AND revenue_usd IS NULL
-       AND first_seen < NOW() - INTERVAL '2 minutes'`,
-  );
+         AND first_seen < NOW() - INTERVAL '2 minutes'`,
+    );
 
-  // ── Cleanup zero-page ghost sessions ────────────────────────────
-  // Sessions upserted when all their events were deduplicated away.
-  // Safe to delete after 2 minutes — no events will arrive for them.
-  await pgPool.query(
-    `DELETE FROM sessions
-     WHERE page_count = 0
-       AND order_id   IS NULL
-       AND first_seen < NOW() - INTERVAL '2 minutes'`,
-  );
+    // Delete zero-page ghost sessions.
+    await pgPool.query(
+      `DELETE FROM sessions
+       WHERE page_count = 0
+         AND order_id   IS NULL
+         AND first_seen < NOW() - INTERVAL '2 minutes'`,
+    );
+  }
 
   console.log(`[worker] inserted ${deduped.length} events (${events.length - deduped.length} deduped), upserted sessions`);
 }
