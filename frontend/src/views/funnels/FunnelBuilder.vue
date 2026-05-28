@@ -235,8 +235,17 @@ async function loadEventTypes() {
   } catch { /* ignore */ }
 }
 
-// Expose steps for parent
-defineExpose({ steps })
+// Load a saved step array into the builder (called by parent when restoring a funnel)
+function loadSteps(saved: BuilderStep[]) {
+  cancelPicker()
+  // Rebuild with fresh IDs to avoid conflicts
+  steps.value = saved.map(s => ({ ...s, id: nextId++ }))
+  // Ensure at least 2 slots
+  while (steps.value.length < 2) steps.value.push(makeStep())
+  emit('update:steps', steps.value)
+}
+
+defineExpose({ steps, loadSteps })
 onMounted(() => emit('update:steps', steps.value))
 </script>
 

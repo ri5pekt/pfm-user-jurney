@@ -267,3 +267,60 @@ funnelsRouter.post('/compute', async (req: Request, res: Response): Promise<void
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ── Saved funnels ────────────────────────────────────────────────────────────
+
+// GET /funnels/saved — list all saved funnels
+funnelsRouter.get('/saved', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pgPool.query(
+      `SELECT id, name, created_by, created_at FROM saved_funnels ORDER BY created_at DESC`,
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[admin-api] GET /funnels/saved error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /funnels/saved/:id — get full config for one saved funnel
+funnelsRouter.get('/saved/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pgPool.query(
+      `SELECT id, name, config, created_by, created_at FROM saved_funnels WHERE id = $1`,
+      [req.params.id],
+    );
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Not found' }); return; }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[admin-api] GET /funnels/saved/:id error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /funnels/saved — create a new saved funnel
+funnelsRouter.post('/saved', async (req: Request, res: Response): Promise<void> => {
+  const { name, config, created_by } = req.body as { name?: string; config?: unknown; created_by?: string };
+  if (!name?.trim() || !config) { res.status(400).json({ error: 'name and config are required' }); return; }
+  try {
+    const result = await pgPool.query(
+      `INSERT INTO saved_funnels (name, config, created_by) VALUES ($1, $2, $3) RETURNING id, name, created_by, created_at`,
+      [name.trim(), JSON.stringify(config), created_by ?? null],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[admin-api] POST /funnels/saved error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /funnels/saved/:id — delete a saved funnel
+funnelsRouter.delete('/saved/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    await pgPool.query(`DELETE FROM saved_funnels WHERE id = $1`, [req.params.id]);
+    res.status(204).end();
+  } catch (err) {
+    console.error('[admin-api] DELETE /funnels/saved/:id error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});

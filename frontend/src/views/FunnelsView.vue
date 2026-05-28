@@ -36,6 +36,46 @@
       </div>
     </div>
 
+    <!-- ── Save / Load bar ────────────────────────────── -->
+    <div class="save-bar">
+      <div class="save-bar-left">
+        <select
+          v-model="selectedFunnelId"
+          class="funnel-select"
+          @change="loadFunnel"
+          :disabled="savedFunnels.length === 0"
+        >
+          <option value="">{{ savedFunnels.length ? 'Load saved funnel…' : 'No saved funnels yet' }}</option>
+          <option v-for="f in savedFunnels" :key="f.id" :value="f.id">{{ f.name }}</option>
+        </select>
+
+        <button
+          v-if="selectedFunnelId"
+          class="btn-delete-funnel"
+          title="Delete this saved funnel"
+          @click="deleteFunnel"
+        >✕ Delete</button>
+      </div>
+
+      <div class="save-bar-right">
+        <template v-if="savingName !== null">
+          <input
+            v-model="savingName"
+            class="save-name-input"
+            placeholder="Funnel name…"
+            @keydown.enter="confirmSave"
+            @keydown.escape="savingName = null"
+            ref="saveNameInput"
+          />
+          <button class="btn-save-confirm" @click="confirmSave" :disabled="!savingName.trim()">Save</button>
+          <button class="btn-save-cancel" @click="savingName = null">Cancel</button>
+        </template>
+        <button v-else class="btn-save-funnel" @click="startSave">
+          💾 Save funnel
+        </button>
+      </div>
+    </div>
+
     <!-- ── Filter bars ─────────────────────────────────── -->
     <div class="filter-section">
       <!-- Primary segment -->
@@ -73,7 +113,7 @@
 
       <!-- LEFT: Builder -->
       <div class="panel panel-builder">
-        <FunnelBuilder @update:steps="onStepsUpdate" />
+        <FunnelBuilder ref="builderRef" @update:steps="onStepsUpdate" />
 
         <button
           class="btn-compute"
@@ -115,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import api from '@/api'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
@@ -203,6 +243,85 @@ const result  = ref<ComputeResponse | null>(null)
 function onStepsUpdate(s: BuilderStep[]) { steps.value = s }
 const canCompute = computed(() => steps.value.filter(s => s.configured).length >= 2)
 
+/* ── Builder ref ──────────────────────────────────── */
+const builderRef = ref<InstanceType<typeof FunnelBuilder> | null>(null)
+
+/* ── Save / Load funnels ──────────────────────────── */
+interface SavedFunnelMeta { id: number; name: string; created_by: string | null; created_at: string }
+interface SavedFunnelFull extends SavedFunnelMeta { config: Record<string, unknown> }
+
+const savedFunnels    = ref<SavedFunnelMeta[]>([])
+const selectedFunnelId = ref<number | ''>('')
+const savingName       = ref<string | null>(null)
+const saveNameInput    = ref<HTMLInputElement | null>(null)
+
+async function fetchSavedFunnels() {
+  try {
+    const { data } = await api.get<SavedFunnelMeta[]>('/funnels/saved')
+    savedFunnels.value = data
+  } catch { /* ignore */ }
+}
+
+async function loadFunnel() {
+  if (!selectedFunnelId.value) return
+  try {
+    const { data } = await api.get<SavedFunnelFull>(`/funnels/saved/${selectedFunnelId.value}`)
+    const c = data.config
+    // Restore steps via builder ref
+    if (Array.isArray(c.steps) && builderRef.value) {
+      builderRef.value.loadSteps(c.steps as BuilderStep[])
+    }
+    // Restore filters
+    if (Array.isArray(c.primaryFilters)) primaryFilters.value = c.primaryFilters as ActiveFilter[]
+    if (Array.isArray(c.compareFilters)) compareFilters.value = c.compareFilters as ActiveFilter[]
+    showCompare.value = Boolean(c.showCompare)
+    // Restore timezone + preset
+    if (c.tzId && ['IL','NY','UTC'].includes(c.tzId as string)) tzId.value = c.tzId as TzKey
+    if (c.preset && ['24h','7d','30d','custom'].includes(c.preset as string)) preset.value = c.preset as PresetId
+    if (c.preset === 'custom' && Array.isArray(c.customRange) && c.customRange[0] && c.customRange[1]) {
+      customRange.value = [new Date(c.customRange[0] as string), new Date(c.customRange[1] as string)]
+    }
+    // Auto-compute after loading
+    await nextTick()
+    compute()
+  } catch { /* ignore */ }
+}
+
+async function deleteFunnel() {
+  if (!selectedFunnelId.value) return
+  if (!confirm('Delete this saved funnel?')) return
+  try {
+    await api.delete(`/funnels/saved/${selectedFunnelId.value}`)
+    selectedFunnelId.value = ''
+    await fetchSavedFunnels()
+  } catch { /* ignore */ }
+}
+
+function startSave() {
+  savingName.value = ''
+  nextTick(() => saveNameInput.value?.focus())
+}
+
+async function confirmSave() {
+  if (!savingName.value?.trim()) return
+  const config = {
+    steps:          steps.value,
+    primaryFilters: primaryFilters.value,
+    compareFilters: compareFilters.value,
+    showCompare:    showCompare.value,
+    preset:         preset.value,
+    tzId:           tzId.value,
+    customRange:    preset.value === 'custom' ? customRange.value.map(d => d?.toISOString() ?? null) : [null, null],
+  }
+  try {
+    await api.post('/funnels/saved', { name: savingName.value.trim(), config })
+    savingName.value = null
+    await fetchSavedFunnels()
+  } catch { /* ignore */ }
+}
+
+onMounted(fetchSavedFunnels)
+
 /* ── Compute ──────────────────────────────────────── */
 async function compute() {
   error.value   = ''
@@ -258,6 +377,48 @@ async function compute() {
   padding: .28rem .5rem .28rem 2rem; background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: .78rem; height: auto; min-height: unset;
 }
+
+/* Save / Load bar */
+.save-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: .5rem; flex-shrink: 0;
+}
+.save-bar-left, .save-bar-right { display: flex; align-items: center; gap: .4rem; }
+
+.funnel-select {
+  padding: .28rem .55rem; font-size: .8rem; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  cursor: pointer; max-width: 240px;
+}
+.funnel-select:focus { outline: none; border-color: var(--accent); }
+
+.btn-delete-funnel {
+  padding: .26rem .6rem; font-size: .75rem; border-radius: 6px;
+  background: none; border: 1px solid #fca5a5; color: #ef4444; cursor: pointer;
+}
+.btn-delete-funnel:hover { background: #fef2f2; }
+
+.btn-save-funnel {
+  padding: .28rem .7rem; font-size: .8rem; font-weight: 600; border-radius: 6px;
+  background: var(--accent); border: none; color: #fff; cursor: pointer;
+}
+.btn-save-funnel:hover { opacity: .88; }
+
+.save-name-input {
+  padding: .28rem .6rem; font-size: .8rem; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--accent); color: var(--text);
+  outline: none; width: 180px;
+}
+.btn-save-confirm {
+  padding: .28rem .65rem; font-size: .8rem; font-weight: 600; border-radius: 6px;
+  background: var(--accent); border: none; color: #fff; cursor: pointer;
+}
+.btn-save-confirm:disabled { opacity: .4; cursor: not-allowed; }
+.btn-save-cancel {
+  padding: .28rem .55rem; font-size: .8rem; border-radius: 6px;
+  background: none; border: 1px solid var(--border); color: var(--soft); cursor: pointer;
+}
+.btn-save-cancel:hover { border-color: var(--text); color: var(--text); }
 
 /* Filter section */
 .filter-section {
